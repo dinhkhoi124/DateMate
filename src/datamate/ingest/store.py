@@ -632,7 +632,8 @@ class Store:
     def _caps_and_checks(self):
         O, L = self.orders, self.lines
         nn = lambda df, c: df is not None and len(df) and c in df and df[c].notna().any()  # noqa: E731
-        dates = [d for d in (O["order_date"] if O is not None and len(O) else []) if d]
+        dates = [d for d in (O["order_date"] if O is not None and len(O) and "order_date" in O else [])
+                 if isinstance(d, date)]  # NaN floats are truthy: keep real dates only
         self.caps = {
             "has_order_id": bool(len(L) and L["_has_oid"].any()) if len(L) else bool(len(O)),
             "has_lines": bool(len(L)), "has_customers": bool(nn(O, "customer_id") or nn(O, "customer_name")),

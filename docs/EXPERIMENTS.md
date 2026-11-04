@@ -12,6 +12,7 @@ Quy ước:
 | 2026-11-04 | v0.0 | baseline toàn abstain | 0.000 | 0.000 | – | 0% | – | – | kiểm tra harness |
 | 2026-11-04 | v0.1-ingest | Ingest 30 shop → Canonical Store | – | – | – | – | – | 113s nguội / 30 shop | Oracle doanh thu tháng (`analysis/sanity_ingest.py`): **dev 68/68, holdout 8/8** |
 | 2026-11-04 | v0.2-core | normalize + timeparse + link + execute + rule parser (chưa có LLM) | **1.000** (2447/2447, 0 sai) | **0.872** (502/20/31) | 96.2% | 94.4% | – | ~210s dev, 41s holdout (cache nóng) | Dev đầu 0.835 → 1.000. Holdout lệch dev 0.13 → parser/ingest overfit dev. Sai nhiều: revenue 4, item_qty 3, shift 2, expiry 2, gross_profit 2. Precision < 97% |
+| 2026-11-04 | v0.3-gate | Chốt chặn phủ từ D10 (min-shops 2, 206 từ) | – | **0.859** (485/10/58) | 98.0% | 89.5% | – | 59s holdout | Sai 20 → 10. LOIO dev coverage 0.889. Public: abstain 69.0%, unanswerable 1.7%, submit_check PASS (`eval/runs/public_v0.3`). Còn sai: revenue 3, shift 2 |
 
 ## Theo intent (bản mới nhất)
 
@@ -21,3 +22,4 @@ Dán bảng breakdown của `eval/run_eval.py --by intent` cho holdout vào đâ
 
 | Ngày | Lần | Version | PA public | Ghi chú |
 |---|---|---|---|---|
+| 2026-11-04 | 1 | v0.2-core (+ fix NaN date_min) | **0.066** | Abstain 32.2% (214 câu do ingest không nhận bảng đơn), unanswerable 4.0%. Holdout 0.872 → public 0.066: ước ~372 đúng / ~306 sai trên 678 câu trả lời (precision ~55%). Rulebook public thêm ngành mới (mẹ & bé, sửa xe, điện thoại) và ~10 luật mới → parser trả lời tự tin sai trên câu lạ |

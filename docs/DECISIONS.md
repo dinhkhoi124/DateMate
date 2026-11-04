@@ -4,6 +4,18 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D10 — Chốt chặn phủ từ (coverage gate) trước khi trả lời (2026-11-04)
+- **Bối cảnh:** lần nộp public đầu được PA 0.066 (ước ~372 đúng / ~306 sai, precision ~55%), trong khi holdout là 0.872. Public có ngành mới (mẹ & bé, sửa xe, điện thoại) và ~10 định nghĩa mới trong rulebook. Parser luật gán câu lạ vào op gần nhất rồi trả lời tự tin nhưng sai.
+- **Lựa chọn:** `parse/gate.py` che thực thể catalog, mốc thời gian và số. Nếu còn từ nào ngoài `parse/gate_vocab.txt` thì abstain. Từ vựng gồm từ của các câu dev đã trả lời đúng, mỗi từ phải xuất hiện ở ≥ 2 shop (`analysis/build_gate_vocab.py --min-shops 2`, 206 từ, chỉ dùng dev).
+- **Lý do:**
+  - Leave-one-industry-out trên dev: gặp ngành chưa thấy thì chốt chặn bỏ ~11% câu đúng (coverage 0.889).
+  - Holdout: số câu sai 20 → 10, precision 96.2% → 98.0%, PA 0.872 → 0.859.
+  - Đánh đổi có lợi khi precision thấp; public và private là ngành lạ.
+- **Hệ quả:**
+  - Tỉ lệ abstain trên public 32% → 69%.
+  - Thêm cách diễn đạt mới thì phải build lại từ vựng.
+  - Khi có LLM parser: câu bị chốt chặn chặn sẽ chuyển sang LLM thay vì abstain.
+
 ### D09 — Ingest 3 tầng gán vai trò + các luật làm sạch (2026-11-04)
 - **Bối cảnh:**
   - 4/30 shop không mô tả cột. biz_124 đặt tên cột cố tình lạ (`Order ID`, `Slg`, `Đ.vị`, `Bằng`, `Hạng`).

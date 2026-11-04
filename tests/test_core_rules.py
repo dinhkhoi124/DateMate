@@ -12,7 +12,7 @@ pytestmark = pytest.mark.skipif(not (ROOT / "data").exists(), reason="train data
 
 @pytest.fixture(scope="module")
 def ctx():
-    return Context(root=ROOT)
+    return Context(root=ROOT, gate=False)  # parser/executor rules; the gate has its own tests
 
 
 def ask(ctx, biz, q, as_of):

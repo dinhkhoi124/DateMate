@@ -13,6 +13,7 @@ from datamate.execute.ops import Abstain, Unanswerable
 from datamate.ingest.store import Store
 from datamate.link.catalog import linker_of
 from datamate.normalize.text import normalize, normalize_pair
+from datamate.parse.gate import load_vocab, residual, unknown
 from datamate.parse.rules import RuleParser
 from datamate.timeparse.periods import LunarCalendar, find_periods
 
@@ -25,8 +26,13 @@ class Context:
     rules: Rules = None
     cal: LunarCalendar = None
     debug: bool = False
+    gate: bool = True                                 # D10 coverage gate; off only for analysis/build_gate_vocab.py
+    vocab: frozenset = None
+    trace: dict = None                                # id -> residual words, filled when not None
 
     def __post_init__(self):
+        if self.vocab is None:
+            self.vocab = load_vocab()
         rb = self.root / "rulebook.md"
         self.rules = from_rulebook(rb.read_text(encoding="utf8")) if rb.exists() else DEFAULT
         self.cal = LunarCalendar.load(str(self.root / "calendar.csv"))
@@ -59,8 +65,15 @@ def analyse(q: dict, ctx: Context):
             if f.has_lines else set()
         parser = st.extra["_parser"] = RuleParser(lk, {u for u in units if u and len(u) <= 6 and " " not in u})
     it = parser.parse(t, periods, as_of, pre=pre)
+    words = residual(t, pre, lk, periods)
+    if ctx.trace is not None:
+        ctx.trace[q["id"]] = words
     if it is None:
         return None, t, abstain(q["id"])
+    unk = unknown(words, ctx.vocab) if ctx.gate else []
+    if unk:
+        it.note = "gate: " + " ".join(unk)
+        return it, t, abstain(q["id"])
     try:
         typ, val = run(it, f, as_of)
     except Unanswerable as e:
