@@ -1,0 +1,6 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": ["data/**", "thele/**", "docs/**", "CLAUDE.md", ".claude/**", "*.jsonl", ".venv/**"],
+  "words": ["datamate", "rulebook", "teencode", "timeparse", "unidecode", "rapidfuzz", "duckdb", "openpyxl", "vllm", "xgrammar", "jsonl", "venv"]
+}

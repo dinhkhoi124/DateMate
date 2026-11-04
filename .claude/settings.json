@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(PYTHONPATH=src .venv/Scripts/python:*)",
+      "Bash(PYTHONIOENCODING=utf-8 PYTHONPATH=src .venv/Scripts/python:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(ls:*)",
+      "Bash(head:*)",
+      "Bash(wc:*)",
+      "Read(data/train/**)",
+      "Read(docs/**)",
+      "Edit(src/**)",
+      "Edit(eval/**)",
+      "Edit(tests/**)",
+      "Edit(docs/**)",
+      "Edit(analysis/**)",
+      "Edit(docker/**)"
+    ],
+    "ask": [
+      "Bash(docker push:*)",
+      "Bash(git push:*)",
+      "Bash(pip install:*)",
+      "Bash(.venv/Scripts/python -m pip install:*)"
+    ],
+    "deny": [
+      "Read(data/public_test/public_test/questions.jsonl)",
+      "Edit(data/**)",
+      "Write(data/**)",
+      "Bash(rm -rf data:*)",
+      "Bash(rm -rf data/*:*)"
+    ]
+  },
+  "env": {
+    "PYTHONIOENCODING": "utf-8",
+    "PYTHONUTF8": "1"
+  }
+}

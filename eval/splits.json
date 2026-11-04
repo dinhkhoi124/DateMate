@@ -1,0 +1,4 @@
+{
+  "_note": "holdout: không mở dữ liệu/câu hỏi khi debug (CLAUDE.md luật 2). Mỗi shop một kiểu xuất khác nhau.",
+  "holdout": ["biz_103", "biz_110", "biz_117", "biz_123", "biz_125", "biz_128"]
+}
