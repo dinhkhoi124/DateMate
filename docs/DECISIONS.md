@@ -4,6 +4,27 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D09 — Ingest 3 tầng gán vai trò + các luật làm sạch (2026-11-04)
+- **Bối cảnh:**
+  - 4/30 shop không mô tả cột. biz_124 đặt tên cột cố tình lạ (`Order ID`, `Slg`, `Đ.vị`, `Bằng`, `Hạng`).
+  - Sổ tay có dòng tổng phụ. Tiền ghi dạng `3,185tr`, `1tr250`.
+- **Lựa chọn:**
+  - Gán vai trò theo thứ tự: (1) mô tả README → vai trò; (2) tên cột → vai trò (từ điển tay + `learned_names.json` học từ README dev); (3) suy luận từ từ khoá tên cột + profile giá trị (mẫu mã `ORD/SP/KH/PN`, ngày, số).
+  - Loại bảng xác định từ tập vai trò kết hợp gợi ý tên file. Vai trò chung (`name`, `qty`, `price`…) được cụ thể hoá theo loại bảng.
+- **Luật làm sạch:**
+  - Bỏ dòng trùng theo mã đơn **sau khi** điền xuôi.
+  - Bỏ dòng tổng phụ (`TỔNG NGÀY…`).
+  - Trạng thái ưu tiên huỷ > trả hàng (mọi bằng chứng) > đang giao > hoàn thành.
+  - Shop chỉ có hoá đơn thì lấy tiền hàng từ cấp đơn.
+- **Lý do:** đã đo được doanh thu tháng khớp tuyệt đối 68/68 dev, 8/8 holdout.
+- **Hệ quả:** tầng (3) là heuristic. Dự định dùng LLM làm schema mapper dự phòng cho shop lạ ở private.
+
+### D08 — Đọc Excel bằng calamine, fallback openpyxl (2026-11-04)
+- **Bối cảnh:** đọc toàn bộ 30 shop train bằng openpyxl mất 587 giây, trong khi private có ngân sách 6 giờ gồm cả LLM.
+- **Lựa chọn:** dùng `python-calamine` (Rust) qua `pd.read_excel(engine="calamine")`. Lỗi thì fallback sang openpyxl. Cache pickle theo file vào `cache/raw/`.
+- **Lý do:** nhanh hơn 8,5 lần trên cùng file (2,5s so với 21,5s), giá trị giống hệt.
+- **Hệ quả:** thêm dependency `python-calamine`. Cache có thể ghi được trong container (không ghi vào `/data`).
+
 ### D07 — Đọc rulebook lúc chạy, chỉ hardcode luật của train (2026-11-04)
 - **Bối cảnh:** rulebook mỗi split khác nhau (public đã thêm luật ngành). Việc hardcode luật chỉ có trong rulebook public là vùng xám (thể lệ 4.2).
 - **Lựa chọn:**

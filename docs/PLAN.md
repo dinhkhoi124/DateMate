@@ -28,10 +28,11 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 - [x] `src/datamate/run.py` chạy được end-to-end (baseline toàn abstain, PA = 0), `eval/submit_check.py` báo PASS
 
 **05–06/11 — Ingest**
-- [ ] Từ điển `mô tả README → field chuẩn` (`ingest/vocab.py`)
-- [ ] Reader: csv, xlsx nhiều sheet/tháng, header 2 dòng, sqlite, gộp `_1/_2/_năm`
-- [ ] Forward-fill nhóm dòng, dedupe dòng trùng trong đơn, trả hàng số âm, trạng thái trong Ghi chú
-- [ ] Capability profile + validation. **Load được cả 30 shop train**
+- [x] Từ điển `mô tả README → field chuẩn` (`ingest/vocab.py`), học tên cột (`learned_names.json`), suy luận dự phòng theo tên + giá trị (`ingest/infer.py`)
+- [x] Reader: csv, xlsx nhiều sheet/tháng, dò header, sqlite, gộp `_1/_2/_năm`, sửa tên file CP437, calamine + cache
+- [x] Forward-fill nhóm dòng, dedupe dòng trùng trong đơn, bỏ dòng tổng phụ, trả hàng số âm/lô, trạng thái trong Ghi chú
+- [x] Capability profile + validation. **Load được 30/30 shop train (113s nguội)**, doanh thu tháng khớp 68/68 dev, 8/8 holdout
+- [ ] Còn mở: xác minh `Không giao được` / `Đang xử lý`, shop không mã đơn (107/113/126: mỗi dòng = 1 đơn?), sqlite `the_kho` và `tra_hang`
 
 **06–09/11 — Core**
 - [ ] `normalize/`: Telex, teencode, bỏ dấu

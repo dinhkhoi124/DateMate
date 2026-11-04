@@ -30,7 +30,11 @@ def clean_text(x) -> str | None:
 
 
 def fold(s: str) -> str:
-    """lowercase, no diacritics, single spaces — for matching labels, never for output."""
+    """lowercase, no diacritics, single spaces — for matching labels, never for output. NaN/None -> ''."""
+    if not isinstance(s, str):
+        if is_blank(s):
+            return ""
+        s = str(s)
     return re.sub(r"\s+", " ", unidecode(unicodedata.normalize("NFC", s)).lower()).strip()
 
 
@@ -48,6 +52,13 @@ def parse_number(x) -> float | None:
         return float(x)
     s = fold(str(x))
     neg = s.startswith("-") or s.startswith("(")
+    # spoken compound: '1tr250' = 1 250 000, '2k5' = 2 500, '1 trieu 2' = 1 200 000
+    m = re.search(r"(\d+)\s*(tr|trieu|k|nghin|ngan)\s*(\d{1,3})(?!\d)\s*(d|vnd|dong)?\s*$", s)
+    if m:
+        unit = 1e6 if m.group(2) in ("tr", "trieu") else 1e3
+        tail = m.group(3)
+        v = int(m.group(1)) * unit + int(tail) * unit / (10 ** len(tail))
+        return -v if neg else v
     mult = 1.0
     if re.search(r"\d\s*(k|nghin|ngan)\b", s):
         mult = 1e3
@@ -57,7 +68,10 @@ def parse_number(x) -> float | None:
     if not m:
         return None
     t = m.group(0).replace(" ", "").lstrip("+-")
-    t = _normalize_separators(t)
+    if mult > 1 and t.count(",") + t.count(".") == 1:
+        t = t.rstrip(".,").replace(",", ".")  # '3,185tr' / '1.5tr': separator before a scale word is decimal
+    else:
+        t = _normalize_separators(t)
     try:
         v = float(t) * mult
     except ValueError:
@@ -204,7 +218,7 @@ DONE, CANCELLED, RETURNED, SHIPPING = "done", "cancelled", "returned", "shipping
 
 # matched on fold()ed text; order matters (first hit wins)
 _STATUS_RULES = [
-    (RETURNED, r"tra hang|hoan hang|hoan tra|doi tra|hang tra ve|tra ve|return|refund|khong giao duoc"),
+    (RETURNED, r"tra hang|tra lai|hoan hang|hoan tra|doi tra|hang tra ve|tra ve|return|refund|khong giao duoc"),
     (CANCELLED, r"\bhuy\b|cancel|void"),  # \b: 'van chuyen' contains 'huy'
     (SHIPPING, r"dang giao|dang van chuyen|dang gui|shipping|delivering|dang xu ly|dang giao dich|cho giao|pending"),
     (DONE, r"hoan thanh|xong|da lay|da giao|thanh cong|completed|complete|done|^ok$|success|da thanh toan"),

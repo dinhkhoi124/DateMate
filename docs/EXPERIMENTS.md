@@ -10,6 +10,7 @@ Quy ước:
 | Ngày | Version | Thay đổi | PA dev | PA holdout | Prec holdout | Coverage holdout | PA public | Thời gian | Ghi chú |
 |---|---|---|---|---|---|---|---|---|---|
 | 2026-11-04 | v0.0 | baseline toàn abstain | 0.000 | 0.000 | – | 0% | – | – | kiểm tra harness |
+| 2026-11-04 | v0.1-ingest | Ingest 30 shop → Canonical Store | – | – | – | – | – | 113s nguội / 30 shop | Oracle doanh thu tháng (`analysis/sanity_ingest.py`): **dev 68/68, holdout 8/8** |
 
 ## Theo intent (bản mới nhất)
 
