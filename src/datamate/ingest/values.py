@@ -218,8 +218,10 @@ DONE, CANCELLED, RETURNED, SHIPPING = "done", "cancelled", "returned", "shipping
 
 # matched on fold()ed text; order matters (first hit wins)
 _STATUS_RULES = [
-    (RETURNED, r"tra hang|tra lai|hoan hang|hoan tra|doi tra|hang tra ve|tra ve|return|refund|khong giao duoc"),
-    (CANCELLED, r"\bhuy\b|cancel|void"),  # \b: 'van chuyen' contains 'huy'
+    (RETURNED, r"tra hang|tra lai|hoan hang|hoan tra|doi tra|hang tra ve|tra ve|return|refund"),
+    # \b: 'van chuyen' contains 'huy'. 'Không giao được' = order never delivered -> cancelled (shops that use it have
+    # no other cancel label; train cancel rates only match with this reading)
+    (CANCELLED, r"\bhuy\b|cancel|void|khong giao duoc|giao khong thanh cong|giao that bai"),
     (SHIPPING, r"dang giao|dang van chuyen|dang gui|shipping|delivering|dang xu ly|dang giao dich|cho giao|pending"),
     (DONE, r"hoan thanh|xong|da lay|da giao|thanh cong|completed|complete|done|^ok$|success|da thanh toan"),
 ]

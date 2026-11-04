@@ -35,11 +35,11 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 - [ ] Còn mở: xác minh `Không giao được` / `Đang xử lý`, shop không mã đơn (107/113/126: mỗi dòng = 1 đơn?), sqlite `the_kho` và `tra_hang`
 
 **06–09/11 — Core**
-- [ ] `normalize/`: Telex, teencode, bỏ dấu
-- [ ] `timeparse/`: mọi mục rulebook §2, kể cả Tết theo `calendar.csv`
-- [ ] `link/`: fuzzy match catalog
-- [ ] `execute/`: viết op theo thứ tự tần suất (doanh thu → số đơn → SL hàng → tăng trưởng → huỷ → argmax ngày → AOV → tỉ trọng → ca → top khách → bán chạy → giá → tồn → nhập → nợ → lãi → ngành)
-- [ ] `parse/rules.py`: rule parser. **Mục tiêu PA dev ≥ 0.85**
+- [x] `normalize/`: Telex, teencode, bỏ dấu
+- [x] `timeparse/`: mọi mục rulebook §2, kể cả Tết theo `calendar.csv`
+- [x] `link/`: fuzzy match catalog
+- [x] `execute/`: viết op theo thứ tự tần suất (doanh thu → số đơn → SL hàng → tăng trưởng → huỷ → argmax ngày → AOV → tỉ trọng → ca → top khách → bán chạy → giá → tồn → nhập → nợ → lãi → ngành)
+- [x] `parse/rules.py`: rule parser. **Mục tiêu PA dev ≥ 0.85**
 
 **08–10/11 — LLM** (cần GPU)
 - [ ] Chốt model ≤ 15B, ghi vào `DECISIONS.md`

@@ -24,7 +24,7 @@ from datamate.ingest.values import (
     parse_datetime, parse_number, parse_payment, parse_qty, parse_status, parse_time,
 )
 
-STORE_VERSION = "s1"
+STORE_VERSION = "s2"
 CACHE_DIR = Path(__file__).resolve().parents[3] / "cache" / "store"
 
 SUMMARY_ROW = r"^(tong|cong|total|sub ?total|sum)( (ngay|thang|tuan|nam|quy|ky|cong|so|tien|doanh thu)\b|\s*$|\s*[:\d])"
@@ -436,7 +436,8 @@ class Store:
             f = fold(pn) if isinstance(pn, str) and pn else None
             if f in fold_map and len(fold_map[f]) == 1:
                 return next(iter(fold_map[f]))
-            return k
+            # rulebook §8: names that differ only in case/spacing/diacritics denote the same item
+            return f or k
 
         def keyify(df):
             if df is None or not len(df):
