@@ -95,10 +95,23 @@ def assign_roles(t: RawTable) -> dict[str, str]:
     return {**sure, **{c: r for c, r in guessed.items() if r not in taken}}
 
 
+SALES_SIDE = {"customer_id", "customer_name", "order_total", "paid", "debt", "payment_method", "channel", "staff_id"}
+IMPORT_SIDE = {"supplier", "supplier_id", "import_price", "import_qty", "import_qty_base", "import_amount",
+               "receipt_total", "import_date", "import_unit"}
+
+
+def _sales_receipt(R: set, hint: str | None) -> bool:
+    """A receipt-like id ('Số phiếu') in a table that only has the customer side of a sale is the order id."""
+    return ("receipt_id" in R and "order_id" not in R and len(R & SALES_SIDE) >= 2 and not R & IMPORT_SIDE
+            and hint not in ("imports", "import_lines", "lots"))
+
+
 def classify(t: RawTable, colroles: dict[str, str]) -> str:
     R = set(colroles.values())
     prod = bool(R & {"product_id", "product_name"})
     hint = _hint(t.name)
+    if _sales_receipt(R, hint):   # 'Số phiếu' of a sales book: customer/payment columns, no supplier side
+        return "lines" if prod or R & {"qty", "qty_base", "unit_price"} else "orders"
     if "receipt_id" in R or hint in ("imports", "import_lines", "lots"):
         if "lot" in R and "expiry" in R and not R & {"import_price", "price", "import_amount"}:
             return "lots"
@@ -180,8 +193,9 @@ def build_table(t: RawTable) -> Table:
     if kind == "units" and "big_unit" not in roles and "unit" in roles:
         roles["big_unit"] = roles.pop("unit")
     # sales table without an order id column: a transaction id ('Mã GD', learned as a receipt id elsewhere) is it
-    if kind in ("lines", "orders") and "order_id" not in roles and "payment_id" in roles:
-        roles["order_id"] = roles.pop("payment_id")
+    for alt in ("payment_id", "receipt_id"):
+        if kind in ("lines", "orders") and "order_id" not in roles and alt in roles:
+            roles["order_id"] = roles.pop(alt)
     if kind == "lines":
         _fix_line_money(t, roles)
     return Table(t.name, kind, t.df, roles, t.sources)
