@@ -48,12 +48,13 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
 1. - [x] Thước đo proxy shop lạ (`eval/synth/`): biến đổi shop dev (đổi tên cột, gộp/tách file, trạng thái vào Ghi chú, đổi đơn vị tiền, bỏ mã, đổi định dạng ngày). Hai chỉ số: **ingest** (so Store) và **end-to-end** (đáp án dev đúng vẫn phải đúng)
    - Lệnh: `eval/synth/run.py --transforms <t> [--shops ...] [--no-e2e] --verbose` (chạy foreground từng transform: máy thiếu RAM). Đủ 24 shop một lần quá 10 phút → chạy 3 nhóm 8 shop. Shop sinh ra được cache (`out/<t>/.stamps`, khoá theo hash của make.py + reader/readme); lần đầu `make()` chậm (openpyxl không có lxml), file không đổi thì copy nguyên bản; regression shop gốc: `eval/synth/fp_snapshot.py diff eval/synth/out/fp_base.json`
    - Lần đo đầu (05/11, đủ 24 shop): rename 19/24 (PA 0.985→0.690, 275 đúng→sai), nodoc 17/24 (0.716), status_note 23/24 (0.933), layout/values 24/24
-2. - [ ] Ingest bền + bất biến lúc chạy. Số chốt 05/11 (đủ 24 shop + e2e, PA gốc 0.985): rename 21/24 (0.773), nodoc/layout/values/status_note 24/24 (0.985), combo 20/24 (0.695)
+2. - [ ] Ingest bền + bất biến lúc chạy. Số chốt 05/11 tối (đủ 24 shop + e2e, PA gốc 0.985): **rename, nodoc, layout, values, status_note, combo đều 24/24, PA 0.985, 0 câu mất**; rename_hard 21/24 (chỉ ingest). Trước khi sửa viết tắt: rename 21/24 (0.773), combo 20/24 (0.695)
    - [x] README theo sheet; suy vai trò cột thiếu mô tả; 'Tổng tiền' dòng = SL×giá; bảng bán ≠ bảng giá; 'Số phiếu' bán ≠ phiếu nhập; không có bảng đơn thì abstain
    - [x] Chạy lại đủ 6 transform × 24 shop có e2e để chốt số (EXPERIMENTS 05/11)
    - [x] status_note biz_120: lỗi transform: README synth vẫn ghi Ghi chú là 'cột trống, không có dữ liệu' nên ingest bỏ qua cột đúng theo README. Sửa `t_status_note`: chỉ sửa mục README của bảng bị bỏ cột trạng thái, mô tả Ghi chú thành 'ghi chú'
-   - [ ] combo biz_105: `orders.with_time`, `rev_by_month` lệch (rename + values + layout gộp lại; từng transform riêng thì đúng)
-   - [ ] Tách `rename` (viết tắt thực tế: SL, ĐG, TT, CK, ĐVT…) và `rename_hard`; shop không mô tả 106/109/124
+   - [x] combo biz_105: `with_time`/`rev_by_month` lệch chỉ khi dùng tên tự chế; combo với rename thực tế 24/24
+   - [x] Tách `rename` (viết tắt thực tế: SL, ĐG, TT, CK, KH, ĐVT, PTTT, HĐ, HSD…) và `rename_hard` (tên tự chế cũ). Ingest: `vocab.ABBREVIATIONS` mở rộng viết tắt khi tên lạ (nghĩa mơ hồ thử theo thứ tự: TT = thành tiền > thanh toán > trạng thái); tên học được chung chung ('KH' → name) nhường cho bản mở rộng cụ thể. Shop không mô tả 106/109/124: rename 0/3 → 3/3
+   - [ ] (thấp) rename_hard 106/109/124 (`TThai`, `GChu`, `Tg.Tien.Hang`): tên không có thật, chỉ sửa nếu public cho thấy kiểu tên này
    - [ ] Bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái) → abstain cả shop
    - [ ] Sinh lại public: đếm câu abstain do không có bảng đơn (trước: 214)
    - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng

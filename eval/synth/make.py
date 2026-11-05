@@ -179,13 +179,38 @@ def odd_name(name: str) -> str:
     return ".".join(t[:1].upper() + t[1:] for t in toks) or str(name)
 
 
-def t_rename(shop: Shop, rng):
-    """Odd abbreviated column names (like 'Slg', 'Đ.vị'); README bullets renamed to match, descriptions kept."""
+# abbreviations Vietnamese sales software and hand-kept books really use (longest phrase first)
+ABBR_REAL = [("phương thức thanh toán", "PTTT"), ("hình thức thanh toán", "HTTT"), ("số điện thoại", "SĐT"),
+             ("nhà cung cấp", "NCC"), ("đơn vị tính", "ĐVT"), ("hạn sử dụng", "HSD"), ("số lượng", "SL"),
+             ("đơn giá", "ĐG"), ("thành tiền", "TT"), ("thanh toán", "TT"), ("chiết khấu", "CK"), ("giảm giá", "GG"),
+             ("khách hàng", "KH"), ("sản phẩm", "SP"), ("hàng hóa", "HH"), ("nhân viên", "NV"), ("hóa đơn", "HĐ"),
+             ("điện thoại", "ĐT")]
+_ABBR_REAL_F = [(fold(a).split(), b) for a, b in ABBR_REAL]
+
+
+def real_name(name: str) -> str:
+    """'Mã hóa đơn' -> 'Mã HĐ', 'Số lượng quy đổi' -> 'SL quy đổi'; other words kept as written."""
+    toks = str(name).split()
+    ft = [fold(t) for t in toks]
+    out, i = [], 0
+    while i < len(toks):
+        for ph, ab in _ABBR_REAL_F:
+            if ft[i:i + len(ph)] == ph:
+                out.append(ab)
+                i += len(ph)
+                break
+        else:
+            out.append(toks[i])
+            i += 1
+    return " ".join(out)
+
+
+def _rename_with(shop: Shop, fn):
     by_squash = {}
     for s in shop.sheets:
         for h in s.header:
             if isinstance(h, str) and h.strip() and squash(h) not in by_squash:
-                by_squash[squash(h)] = odd_name(h)
+                by_squash[squash(h)] = fn(h)
     used: dict[str, int] = {}
     for k, v in list(by_squash.items()):
         used[v] = used.get(v, 0) + 1
@@ -194,6 +219,16 @@ def t_rename(shop: Shop, rng):
     for s in shop.sheets:
         s.header = [by_squash.get(squash(h), h) if isinstance(h, str) else h for h in s.header]
     shop.readme = _rename_bullets(shop.readme, by_squash)
+
+
+def t_rename(shop: Shop, rng):
+    """Realistic abbreviations (SL, ĐG, TT, CK, KH, ĐVT, PTTT...); README bullets renamed, descriptions kept."""
+    _rename_with(shop, real_name)
+
+
+def t_rename_hard(shop: Shop, rng):
+    """Odd made-up names ('Tg.Tien.Hang', 'TThai', 'GChu'); README bullets renamed, descriptions kept."""
+    _rename_with(shop, odd_name)
 
 
 def t_nodoc(shop: Shop, rng):
@@ -318,6 +353,7 @@ def t_status_note(shop: Shop, rng):
 
 TRANSFORMS = {
     "rename": [t_rename],
+    "rename_hard": [t_rename_hard],
     "nodoc": [t_nodoc],
     "layout": [t_layout],
     "values": [t_values],

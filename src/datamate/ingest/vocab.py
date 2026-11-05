@@ -148,7 +148,7 @@ NAME_SYNONYMS: dict[str, str] = {squash(k): v for k, v in {
     "Số lượng": "qty", "SL": "qty", "SoLuong": "qty", "Số lượng quy đổi": "qty_base", "SL quy đổi": "qty_base",
     "SLQuyDoi": "qty_base", "Số lượng (ĐVT cơ bản)": "qty_base_generic", "Số lượng trả (ĐVT cơ bản)": "lot_return_qty_base",
     "Đơn giá": "price", "DonGia": "price", "Giá bán": "price", "GiaBan": "price", "Giá": "price",
-    "Giảm giá": "discount", "GiamGia": "discount", "Thành tiền": "amount", "ThanhTien": "amount", "TriGia": "amount",
+    "Giảm giá": "discount", "GiamGia": "discount", "Chiết khấu": "discount", "ChietKhau": "discount", "Thành tiền": "amount", "ThanhTien": "amount", "TriGia": "amount",
     "Giá vốn": "cost", "GiaVon": "cost", "GiaVonLucBan": "cost_unit", "Giá vốn lúc bán": "cost_unit",
     "Tổng tiền hàng": "order_subtotal", "TongTienHang": "order_subtotal",
     "Tổng sau giảm giá": "order_total", "Tổng tiền": "order_total", "TongTien": "order_total", "Tổng đơn": "order_total",
@@ -188,10 +188,53 @@ def learn_name_roles(pairs: list[tuple[str, str]]) -> dict[str, str]:
     return {k: max(v, key=v.get) for k, v in votes.items()}
 
 
-def role_from_name(name: str, learned: dict[str, str] | None = None) -> str | None:
-    k = squash(name)
+# Abbreviations used in Vietnamese exports and hand-kept books ('SL', 'ĐG', 'Mã HĐ', 'PTTT'): token -> expansions,
+# tried in this order. Only used when the name itself is unknown; an expansion must still hit a known name.
+ABBREVIATIONS: dict[str, tuple[str, ...]] = {
+    "sl": ("so luong",), "dg": ("don gia",), "tt": ("thanh tien", "thanh toan", "trang thai"),
+    "ck": ("chiet khau",), "gg": ("giam gia",), "kh": ("khach hang",), "sp": ("san pham",), "hh": ("hang hoa",),
+    "nv": ("nhan vien",), "ncc": ("nha cung cap",), "dvt": ("don vi tinh",), "sdt": ("so dien thoai",),
+    "dt": ("dien thoai",), "pttt": ("phuong thuc thanh toan",), "httt": ("hinh thuc thanh toan",),
+    "hd": ("hoa don",), "hsd": ("han su dung",),
+}
+_MAX_EXPANSIONS = 27
+
+
+# roles that tables.py specialises by table kind; a specific role from an expansion beats them
+GENERIC_ROLES = frozenset({"name", "qty", "price", "date", "amount", "discount", "cost", "unit", "status_generic",
+                           "qty_base_generic"})
+
+
+def _lookup(k: str, learned: dict[str, str] | None) -> str | None:
     if k in NAME_SYNONYMS:
         return NAME_SYNONYMS[k]
     if learned and k in learned:
         return learned[k]
     return None
+
+
+def expansions(name: str) -> list[str]:
+    """'SL quy đổi' -> ['so luong quy doi']; 'Phương thức TT' -> ['phuong thuc thanh tien', '... thanh toan', ...]."""
+    toks = [t for t in re.split(r"[^a-z0-9]+", fold(name)) if t]
+    if not any(t in ABBREVIATIONS for t in toks):
+        return []
+    out = [""]
+    for t in toks:
+        out = [f"{o} {e}".strip() for o in out for e in ABBREVIATIONS.get(t, (t,))][:_MAX_EXPANSIONS]
+    return out
+
+
+def role_from_name(name: str, learned: dict[str, str] | None = None) -> str | None:
+    """Curated synonym > specific learned name > first abbreviation expansion (in ABBREVIATIONS order) > generic
+    learned name. 'KH' learned as a generic 'tên' still reads as khách hàng; 'TT' stays thành tiền before thanh toán."""
+    k = squash(name)
+    if k in NAME_SYNONYMS:
+        return NAME_SYNONYMS[k]
+    lr = learned.get(k) if learned else None
+    if lr is not None and lr not in GENERIC_ROLES:
+        return lr
+    for e in expansions(name):
+        r = _lookup(squash(e), learned)
+        if r is not None:
+            return r
+    return lr
