@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from datamate.ingest.readme import ReadmeSpec
+from datamate.ingest.readme import SHEET_SEP, ReadmeSpec
 from datamate.ingest.vocab import NAME_SYNONYMS, squash
 
 CACHE_DIR = Path(__file__).resolve().parents[3] / "cache" / "raw"
@@ -150,7 +150,7 @@ def read_shop(shop_dir: Path, spec: ReadmeSpec) -> list[RawTable]:
                 if raw.dropna(how="all").empty:
                     continue
                 per = sheet_period(sname)
-                doc = file_doc if (per or len(sheets) == 1) else (_doc_for(spec, sname) or file_doc)
+                doc = _doc_for(spec, f"{fname}{SHEET_SEP}{sname}") or (file_doc if (per or len(sheets) == 1) else (_doc_for(spec, sname) or file_doc))
                 expected = {squash(c) for c in doc}
                 h = _detect_header(raw, expected, known)
                 df = _apply_header(raw, h)

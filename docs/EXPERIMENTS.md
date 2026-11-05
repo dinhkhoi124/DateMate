@@ -23,3 +23,4 @@ Dán bảng breakdown của `eval/run_eval.py --by intent` cho holdout vào đâ
 | Ngày | Lần | Version | PA public | Ghi chú |
 |---|---|---|---|---|
 | 2026-11-04 | 1 | v0.2-core (+ fix NaN date_min) | **0.066** | Abstain 32.2% (214 câu do ingest không nhận bảng đơn), unanswerable 4.0%. Holdout 0.872 → public 0.066: ước ~372 đúng / ~306 sai trên 678 câu trả lời (precision ~55%). Rulebook public thêm ngành mới (mẹ & bé, sửa xe, điện thoại) và ~10 luật mới → parser trả lời tự tin sai trên câu lạ |
+| 2026-11-04 | 2 | v0.3-gate (6e5f1a6) | **0.076** | 310 câu trả lời → ước ~193 đúng / ~117 sai (precision ~62%). Gate bỏ 368 câu, trong đó ~179 đúng / ~189 sai → **từ lạ gần như không phân biệt được đúng/sai trên public**. Phần lớn câu sai nằm ở câu diễn đạt quen nhưng tính sai → nghi ingest/ngữ nghĩa trên shop lạ |

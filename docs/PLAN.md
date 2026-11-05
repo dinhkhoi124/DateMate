@@ -6,8 +6,10 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 
 | Chỉ số | Cách đo | Ngưỡng |
 |---|---|---|
-| PA holdout | 6 shop train giữ lại, không nhìn khi viết code | ≥ 0.90 |
-| Precision (câu đã trả lời) | đúng / (đúng + sai) | ≥ 97% |
+| **PA proxy shop lạ** (từ 04/11) | shop tổng hợp từ train, đổi schema/cách ghi (`eval/synth/`). **Thước đo chính để ra quyết định** | tăng đều; precision ≥ 90% |
+| **Ingest shop lạ** | đo riêng: Store dựng từ shop tổng hợp so với Store gốc (đơn, dòng, tiền, trạng thái, ngày) | ≥ 95% số chỉ số khớp |
+| PA holdout | 6 shop train giữ lại, không nhìn khi viết code. Chỉ dùng làm **regression check**, không tối ưu thêm | không giảm > 0.02 |
+| Precision (câu đã trả lời) | đúng / (đúng + sai) | ≥ 97% holdout |
 | Thời gian | 1000 câu trên 1× GPU 32GB, tính cả load model | ≤ 2 giờ |
 | Ổn định | chạy 2 lần | lệch PA ≤ 0.005 |
 
@@ -41,6 +43,15 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 - [x] `execute/`: viết op theo thứ tự tần suất (doanh thu → số đơn → SL hàng → tăng trưởng → huỷ → argmax ngày → AOV → tỉ trọng → ca → top khách → bán chạy → giá → tồn → nhập → nợ → lãi → ngành)
 - [x] `parse/rules.py`: rule parser. **Mục tiêu PA dev ≥ 0.85**
 
+**04–06/11 — Thứ tự lại sau public 0.066 / 0.076 (D10, EXPERIMENTS)**
+Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo được tổng quát hoá. Câu sai trên public phần lớn ở câu diễn đạt quen, nên nghi ingest hoặc ngữ nghĩa trên shop lạ. **Đánh giá ingest và parser tách riêng.** Không tối ưu thêm precision holdout.
+1. - [ ] Thước đo proxy shop lạ (`eval/synth/`): biến đổi shop dev (đổi tên cột, gộp/tách file, trạng thái vào Ghi chú, đổi đơn vị tiền, bỏ mã, đổi định dạng ngày). Hai chỉ số: **ingest** (so Store) và **end-to-end** (đáp án dev đúng vẫn phải đúng)
+2. - [ ] Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
+3. - [ ] Luật đọc từ rulebook lúc chạy (xác minh D03 trên forum trước)
+4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ
+5. - [ ] Code-gen fallback để cuối
+- [ ] Song song: Dockerfile bản rule-only trước 10/11 (dự phòng)
+
 **08–10/11 — LLM** (cần GPU)
 - [ ] Chốt model ≤ 15B, ghi vào `DECISIONS.md`
 - [ ] vLLM + guided JSON, prompt có few-shot từ dev
@@ -49,7 +60,7 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 **10–12/11 — Mở rộng**
 - [ ] Fallback code-gen cho câu OOD
 - [ ] Luật ngành bổ sung, đọc rulebook lúc chạy
-- [ ] Dữ liệu tự sinh: paraphrase có lỗi gõ, shop tổng hợp đổi schema
+- [ ] Dữ liệu tự sinh: paraphrase có lỗi gõ (shop tổng hợp đổi schema: kéo lên bước 1 ở trên)
 
 ### Phase 3 — Test (song song, chốt 15/11)
 - [ ] Test độ bền: shop và rulebook tổng hợp

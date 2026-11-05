@@ -54,6 +54,9 @@ def unanswerable(qid: str, reason: str) -> dict:
 def analyse(q: dict, ctx: Context):
     """Returns (intent, normalized text, row)."""
     st = ctx.store(q["business_id"])
+    if st.orders is None or not len(st.orders) or "order_date" not in st.orders:
+        # ingest found no sales table: data was not understood, so nothing is known about it (not 'unanswerable')
+        return None, "", abstain(q["id"])
     f = facts_of(st, ctx.rules)
     lk = linker_of(f)
     as_of = date.fromisoformat(q["as_of_date"])
