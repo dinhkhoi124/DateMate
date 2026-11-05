@@ -39,6 +39,13 @@ class Sheet:
     header: list
     rows: list                # list of lists
     doc: dict = field(default_factory=dict)   # column -> README description
+    src: Path | None = None   # original file; copied as is when no transform touched its sheets
+    sig: str = ""             # content signature at load time
+
+    def signature(self) -> str:
+        import hashlib
+        import pickle
+        return hashlib.sha1(pickle.dumps((self.file, self.sheet, self.top, self.header, self.rows))).hexdigest()
 
 
 @dataclass
@@ -63,7 +70,7 @@ def load(shop_dir: Path) -> Shop | None:
         name, suf = fix_mojibake(f.name), f.suffix.lower()
         if suf == ".csv":
             df = pd.read_csv(f, dtype=str, encoding="utf-8-sig", keep_default_na=False, na_values=[""])
-            sheets.append(Sheet(name, None, [], list(df.columns), df.values.tolist(), _doc_for(spec, name)))
+            sheets.append(Sheet(name, None, [], list(df.columns), df.values.tolist(), _doc_for(spec, name), f))
         elif suf in (".xlsx", ".xlsm", ".xls"):
             all_ = _read_excel_all(f)
             fdoc = _doc_for(spec, name)
@@ -73,14 +80,42 @@ def load(shop_dir: Path) -> Shop | None:
                 doc = _doc_for(spec, f"{name}{SHEET_SEP}{sname}") or (fdoc if (sheet_period(sname) or len(all_) == 1) else (_doc_for(spec, sname) or fdoc))
                 h = _detect_header(raw, {squash(c) for c in doc}, known)
                 g = raw.values.tolist()
-                sheets.append(Sheet(Path(name).with_suffix(".xlsx").name, sname, g[:h], g[h], g[h + 1:], doc))
+                sheets.append(Sheet(Path(name).with_suffix(".xlsx").name, sname, g[:h], g[h], g[h + 1:], doc, f))
         else:
             return None   # sqlite / unknown formats: not generated
+    for s in sheets:
+        s.sig = s.signature()
     return Shop(shop_dir.name, (shop_dir / "README.md").read_text(encoding="utf8"), sheets)
 
 
 def _cell(v):
-    return None if v is None or (isinstance(v, float) and v != v) else v
+    if v is None or (isinstance(v, float) and v != v) or v is pd.NaT:
+        return None
+    return v
+
+
+def _write_xlsx(path: Path, sheets: list[Sheet]):
+    """openpyxl write-only: faster than DataFrame.to_excel (same Store fingerprints on 6 dev shops)."""
+    from openpyxl import Workbook
+    wb = Workbook(write_only=True)
+    for s in sheets:
+        width = max(len(s.header), *(len(r) for r in s.top or [[]]))
+        ws = wb.create_sheet((s.sheet or "Sheet1")[:31])
+        for r in [*s.top, s.header, *s.rows]:
+            row = [_cell(v) for v in r] + [None] * (width - len(r))
+            while row and row[-1] is None:   # to_excel does not write trailing empty cells either
+                row.pop()
+            ws.append(row)
+    wb.save(path)
+
+
+def _code_hash() -> str:
+    """Generated shops are reused only if the generator (and the reader it uses) did not change."""
+    import hashlib
+    h = hashlib.sha1()
+    for f in (Path(__file__), ROOT / "src" / "datamate" / "ingest" / "reader.py", ROOT / "src" / "datamate" / "ingest" / "readme.py"):
+        h.update(f.read_bytes())
+    return h.hexdigest()
 
 
 def save(shop: Shop, root: Path):
@@ -90,17 +125,16 @@ def save(shop: Shop, root: Path):
     d.mkdir(parents=True)
     (d / "README.md").write_text(shop.readme, encoding="utf8")
     for fname, sheets in shop.files().items():
-        if fname.lower().endswith(".csv"):
+        src = sheets[0].src
+        if (src is not None and src.suffix.lower() == Path(fname).suffix.lower()
+                and all(x.src == src and x.sig == x.signature() for x in sheets)):
+            shutil.copy(src, d / fname)   # untouched file: the original bytes
+        elif fname.lower().endswith(".csv"):
             s = sheets[0]
             pd.DataFrame([[_cell(v) for v in r] for r in s.rows], columns=[str(h) for h in s.header]) \
                 .to_csv(d / fname, index=False, encoding="utf8")
         else:
-            with pd.ExcelWriter(d / fname, engine="openpyxl") as w:
-                for s in sheets:
-                    width = max(len(s.header), *(len(r) for r in s.top or [[]]))
-                    pad = lambda r: [_cell(v) for v in r] + [None] * (width - len(r))  # noqa: E731
-                    grid = [pad(r) for r in s.top] + [pad(s.header)] + [pad(r) for r in s.rows]
-                    pd.DataFrame(grid).to_excel(w, sheet_name=(s.sheet or "Sheet1")[:31], header=False, index=False)
+            _write_xlsx(d / fname, sheets)
     for fn in ("rulebook.md", "calendar.csv"):
         if not (root / fn).exists():
             shutil.copy(TRAIN / fn, root / fn)
@@ -230,6 +264,7 @@ def t_values(shop: Shop, rng):
 def t_status_note(shop: Shop, rng):
     """No status column: status written in the notes column (rulebook public §8 'Sổ không có cột trạng thái')."""
     removed = set()
+    touched = set()   # files whose status column moved into the notes
     for s in shop.sheets:
         st = [j for j, h in enumerate(s.header) if isinstance(h, str) and
               (squash(h) in ("trangthai", "tinhtrang", "status") or "trang thai" in fold(s.doc.get(h, ""))[:40])]
@@ -237,6 +272,7 @@ def t_status_note(shop: Shop, rng):
             continue
         j = st[0]
         removed.add(squash(s.header[j]))
+        touched.add(s.file)
         nt = [i for i, h in enumerate(s.header) if isinstance(h, str) and squash(h) in ("ghichu", "note", "notes")]
         rows = []
         for r in s.rows:
@@ -256,13 +292,28 @@ def t_status_note(shop: Shop, rng):
         del s.header[j]
         s.rows = rows
     if removed:
+        # only the sections of tables that lost their status column; the notes bullet must describe a notes column
+        # (dev READMEs say 'ghi chú'), not keep e.g. 'cột trống, không có dữ liệu' while it now holds the status
         def drop(body):
-            body = "".join(ln for ln in body.splitlines(keepends=True)
-                           if not ((m := _BULLET.match(ln)) and squash(m.group(2).rpartition(".")[2]) in removed))
+            out = []
+            for ln in body.splitlines(keepends=True):
+                m = _BULLET.match(ln)
+                key = squash(m.group(2).rpartition(".")[2]) if m else None
+                if key in removed:
+                    continue
+                if key in ("ghichu", "note", "notes"):
+                    ln = f"{m.group(1)}{m.group(2)}{m.group(3)} ghi chú\n"
+                out.append(ln)
+            body = "".join(out)
             if "**Ghi chú**" not in body:
-                body = body.rstrip("\n") + "\n- **Ghi chú**: ghi chú của đơn\n\n"
+                body = body.rstrip("\n") + "\n- **Ghi chú**: ghi chú\n\n"
             return body
-        shop.readme = _col_sections(shop.readme, drop)
+        parts = _H2.split(shop.readme)
+        for i in range(1, len(parts), 2):
+            t = parts[i]
+            if any(f"`{f}`" in t for f in touched) or (t.lower().startswith("## bảng") and touched):
+                parts[i + 1] = drop(parts[i + 1])
+        shop.readme = "".join(parts)
 
 
 TRANSFORMS = {
@@ -278,7 +329,13 @@ TRANSFORMS = {
 def make(transform: str, shops: list[str], seed: int = 0) -> Path:
     root = OUT / transform
     root.mkdir(parents=True, exist_ok=True)
+    stamps = root / ".stamps"   # outside data/: never seen by ingest
+    stamps.mkdir(exist_ok=True)
+    key = f"{_code_hash()}-{seed}"
     for biz in shops:
+        st = stamps / biz
+        if st.exists() and st.read_text(encoding="utf8") == key and (root / "data" / biz).exists():
+            continue
         shop = load(TRAIN / "data" / biz)
         if shop is None:
             continue
@@ -286,4 +343,5 @@ def make(transform: str, shops: list[str], seed: int = 0) -> Path:
         for fn in TRANSFORMS[transform]:
             fn(shop, rng)
         save(shop, root)
+        st.write_text(key, encoding="utf8")
     return root

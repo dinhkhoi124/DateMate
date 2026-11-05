@@ -46,12 +46,13 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 **04–06/11 — Thứ tự lại sau public 0.066 / 0.076 (D10, EXPERIMENTS)**
 Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo được tổng quát hoá. Câu sai trên public phần lớn ở câu diễn đạt quen, nên nghi ingest hoặc ngữ nghĩa trên shop lạ. **Đánh giá ingest và parser tách riêng.** Không tối ưu thêm precision holdout.
 1. - [x] Thước đo proxy shop lạ (`eval/synth/`): biến đổi shop dev (đổi tên cột, gộp/tách file, trạng thái vào Ghi chú, đổi đơn vị tiền, bỏ mã, đổi định dạng ngày). Hai chỉ số: **ingest** (so Store) và **end-to-end** (đáp án dev đúng vẫn phải đúng)
-   - Lệnh: `eval/synth/run.py --transforms <t> [--shops ...] [--no-e2e] --verbose` (chạy foreground từng transform: máy thiếu RAM); regression shop gốc: `eval/synth/fp_snapshot.py diff eval/synth/out/fp_base.json`
+   - Lệnh: `eval/synth/run.py --transforms <t> [--shops ...] [--no-e2e] --verbose` (chạy foreground từng transform: máy thiếu RAM). Đủ 24 shop một lần quá 10 phút → chạy 3 nhóm 8 shop. Shop sinh ra được cache (`out/<t>/.stamps`, khoá theo hash của make.py + reader/readme); lần đầu `make()` chậm (openpyxl không có lxml), file không đổi thì copy nguyên bản; regression shop gốc: `eval/synth/fp_snapshot.py diff eval/synth/out/fp_base.json`
    - Lần đo đầu (05/11, đủ 24 shop): rename 19/24 (PA 0.985→0.690, 275 đúng→sai), nodoc 17/24 (0.716), status_note 23/24 (0.933), layout/values 24/24
-2. - [ ] Ingest bền + bất biến lúc chạy. Tiến độ 05/11 (commit d5dbea7, 0b04c7a): nodoc 24/24, rename 21/24 (số theo shop, chưa chạy lại đủ 24 shop + e2e)
+2. - [ ] Ingest bền + bất biến lúc chạy. Số chốt 05/11 (đủ 24 shop + e2e, PA gốc 0.985): rename 21/24 (0.773), nodoc/layout/values/status_note 24/24 (0.985), combo 20/24 (0.695)
    - [x] README theo sheet; suy vai trò cột thiếu mô tả; 'Tổng tiền' dòng = SL×giá; bảng bán ≠ bảng giá; 'Số phiếu' bán ≠ phiếu nhập; không có bảng đơn thì abstain
-   - [ ] Chạy lại đủ 6 transform × 24 shop có e2e để chốt số
-   - [ ] status_note biz_120: trạng thái trong Ghi chú không nhận ra
+   - [x] Chạy lại đủ 6 transform × 24 shop có e2e để chốt số (EXPERIMENTS 05/11)
+   - [x] status_note biz_120: lỗi transform: README synth vẫn ghi Ghi chú là 'cột trống, không có dữ liệu' nên ingest bỏ qua cột đúng theo README. Sửa `t_status_note`: chỉ sửa mục README của bảng bị bỏ cột trạng thái, mô tả Ghi chú thành 'ghi chú'
+   - [ ] combo biz_105: `orders.with_time`, `rev_by_month` lệch (rename + values + layout gộp lại; từng transform riêng thì đúng)
    - [ ] Tách `rename` (viết tắt thực tế: SL, ĐG, TT, CK, ĐVT…) và `rename_hard`; shop không mô tả 106/109/124
    - [ ] Bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái) → abstain cả shop
    - [ ] Sinh lại public: đếm câu abstain do không có bảng đơn (trước: 214)
