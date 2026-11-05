@@ -45,8 +45,17 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 
 **04–06/11 — Thứ tự lại sau public 0.066 / 0.076 (D10, EXPERIMENTS)**
 Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo được tổng quát hoá. Câu sai trên public phần lớn ở câu diễn đạt quen, nên nghi ingest hoặc ngữ nghĩa trên shop lạ. **Đánh giá ingest và parser tách riêng.** Không tối ưu thêm precision holdout.
-1. - [ ] Thước đo proxy shop lạ (`eval/synth/`): biến đổi shop dev (đổi tên cột, gộp/tách file, trạng thái vào Ghi chú, đổi đơn vị tiền, bỏ mã, đổi định dạng ngày). Hai chỉ số: **ingest** (so Store) và **end-to-end** (đáp án dev đúng vẫn phải đúng)
-2. - [ ] Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
+1. - [x] Thước đo proxy shop lạ (`eval/synth/`): biến đổi shop dev (đổi tên cột, gộp/tách file, trạng thái vào Ghi chú, đổi đơn vị tiền, bỏ mã, đổi định dạng ngày). Hai chỉ số: **ingest** (so Store) và **end-to-end** (đáp án dev đúng vẫn phải đúng)
+   - Lệnh: `eval/synth/run.py --transforms <t> [--shops ...] [--no-e2e] --verbose` (chạy foreground từng transform: máy thiếu RAM); regression shop gốc: `eval/synth/fp_snapshot.py diff eval/synth/out/fp_base.json`
+   - Lần đo đầu (05/11, đủ 24 shop): rename 19/24 (PA 0.985→0.690, 275 đúng→sai), nodoc 17/24 (0.716), status_note 23/24 (0.933), layout/values 24/24
+2. - [ ] Ingest bền + bất biến lúc chạy. Tiến độ 05/11 (commit d5dbea7, 0b04c7a): nodoc 24/24, rename 21/24 (số theo shop, chưa chạy lại đủ 24 shop + e2e)
+   - [x] README theo sheet; suy vai trò cột thiếu mô tả; 'Tổng tiền' dòng = SL×giá; bảng bán ≠ bảng giá; 'Số phiếu' bán ≠ phiếu nhập; không có bảng đơn thì abstain
+   - [ ] Chạy lại đủ 6 transform × 24 shop có e2e để chốt số
+   - [ ] status_note biz_120: trạng thái trong Ghi chú không nhận ra
+   - [ ] Tách `rename` (viết tắt thực tế: SL, ĐG, TT, CK, ĐVT…) và `rename_hard`; shop không mô tả 106/109/124
+   - [ ] Bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái) → abstain cả shop
+   - [ ] Sinh lại public: đếm câu abstain do không có bảng đơn (trước: 214)
+   - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
 3. - [ ] Luật đọc từ rulebook lúc chạy (xác minh D03 trên forum trước)
 4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ
 5. - [ ] Code-gen fallback để cuối
