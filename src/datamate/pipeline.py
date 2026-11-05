@@ -10,6 +10,7 @@ from datamate.config import DEFAULT, Rules, from_rulebook
 from datamate.execute.dispatch import run
 from datamate.execute.facts import facts_of
 from datamate.execute.ops import Abstain, Unanswerable
+from datamate.ingest.checks import blocking, metrics, violations
 from datamate.ingest.store import Store
 from datamate.link.catalog import linker_of
 from datamate.normalize.text import normalize, normalize_pair
@@ -27,6 +28,7 @@ class Context:
     cal: LunarCalendar = None
     debug: bool = False
     gate: bool = True                                 # D10 coverage gate; off only for analysis/build_gate_vocab.py
+    checks: bool = True                               # D11 run-time ingest invariants; off only to measure them
     vocab: frozenset = None
     trace: dict = None                                # id -> residual words, filled when not None
 
@@ -41,6 +43,13 @@ class Context:
         if biz not in self.stores:
             self.stores[biz] = Store.build(self.root / "data" / biz)
         return self.stores[biz]
+
+    def violations(self, biz: str) -> list:
+        """D11: invariant violations of the shop's Store (computed once per shop)."""
+        st = self.store(biz)
+        if "_violations" not in st.extra:
+            st.extra["_violations"] = violations(metrics(st))
+        return st.extra["_violations"]
 
 
 def abstain(qid: str) -> dict:
@@ -77,6 +86,11 @@ def analyse(q: dict, ctx: Context):
     if unk:
         it.note = "gate: " + " ".join(unk)
         return it, t, abstain(q["id"])
+    if ctx.checks:
+        bad = blocking(it.op, ctx.violations(q["business_id"]))
+        if bad:   # D11: the data this op reads failed a run-time invariant -> not enough evidence to answer
+            it.note = "invariant: " + ", ".join(sorted({v.name for v in bad}))
+            return it, t, abstain(q["id"])
     try:
         typ, val = run(it, f, as_of)
     except Unanswerable as e:

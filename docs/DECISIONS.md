@@ -4,6 +4,16 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D11 — Giới hạn dùng public; ingest tự kiểm tra, không chạy theo lỗi từng shop public (2026-11-05)
+- **Bối cảnh:** sau public v0.4 vẫn còn 107 câu abstain do không nhận ra bảng đơn (2 shop). Proxy synth đã sạch (6 transform đều 24/24) nhưng không tái hiện được kiểu dữ liệu của 2 shop này. BTC xác nhận được xem cấu trúc dữ liệu public để cải thiện bộ đọc (`SPEC.md` §7 câu 4). Rủi ro còn lại là overfit: sửa cho đúng 14 shop public trong khi private là shop mới. Các câu abstain đó vẫn an toàn (được 0 điểm). Mối nguy thật là câu ingest đọc sai mà vẫn trả lời (bị −1).
+- **Lựa chọn:**
+  1. Không tối ưu theo từng lỗi public. Được xem cấu trúc public (tên file, sheet, header, README), nhưng chỉ để rút ra **kiểu dữ liệu**, không phải bản sửa cho một shop. Không đọc giá trị ô hay câu hỏi để viết luật (luật 1 vẫn giữ). Ghi lại mỗi lần xem: shop nào, xem gì.
+  2. Mỗi kiểu mới phải có một transform `eval/synth` tái hiện trên shop dev. Bản sửa chỉ được nhận khi đo trên proxy, `fp_snapshot` shop gốc không đổi và holdout không giảm. Không nhận bản sửa chỉ làm tăng điểm public.
+  3. Điểm public chỉ để quan sát: tối đa một lần nộp mỗi milestone, không sửa code theo con số đó.
+  4. Ưu tiên tự kiểm tra trước khi mở rộng phủ: kiểm tra bất biến lúc chạy trên Store. Shop nào vi phạm thì abstain cả shop, hoặc abstain những câu dùng đến phần dữ liệu bị nghi.
+- **Lý do:** private là shop mới. Bộ đọc tổng quát, biết tự nghi ngờ thì đáng giá hơn bộ đọc thuộc lòng 14 shop public. PA phạt câu sai nặng hơn nhiều so với câu bỏ qua.
+- **Hệ quả:** 107 câu của 2 shop đó tạm vẫn abstain. Việc tiếp theo là bất biến lúc chạy, đo bằng transform cố ý làm hỏng ingest: bất biến phải chuyển câu sai thành abstain mà không làm mất câu đúng trên shop gốc.
+
 ### D10 — Chốt chặn phủ từ (coverage gate) trước khi trả lời (2026-11-04)
 - **Bối cảnh:** lần nộp public đầu được PA 0.066 (ước ~372 đúng / ~306 sai, precision ~55%), trong khi holdout là 0.872. Public có ngành mới (mẹ & bé, sửa xe, điện thoại) và ~10 định nghĩa mới trong rulebook. Parser luật gán câu lạ vào op gần nhất rồi trả lời tự tin nhưng sai.
 - **Lựa chọn:** `parse/gate.py` che thực thể catalog, mốc thời gian và số. Nếu còn từ nào ngoài `parse/gate_vocab.txt` thì abstain. Từ vựng gồm từ của các câu dev đã trả lời đúng, mỗi từ phải xuất hiện ở ≥ 2 shop (`analysis/build_gate_vocab.py --min-shops 2`, 206 từ, chỉ dùng dev).

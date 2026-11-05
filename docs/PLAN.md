@@ -55,7 +55,10 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
    - [x] combo biz_105: `with_time`/`rev_by_month` lệch chỉ khi dùng tên tự chế; combo với rename thực tế 24/24
    - [x] Tách `rename` (viết tắt thực tế: SL, ĐG, TT, CK, KH, ĐVT, PTTT, HĐ, HSD…) và `rename_hard` (tên tự chế cũ). Ingest: `vocab.ABBREVIATIONS` mở rộng viết tắt khi tên lạ (nghĩa mơ hồ thử theo thứ tự: TT = thành tiền > thanh toán > trạng thái); tên học được chung chung ('KH' → name) nhường cho bản mở rộng cụ thể. Shop không mô tả 106/109/124: rename 0/3 → 3/3
    - [ ] (thấp) rename_hard 106/109/124 (`TThai`, `GChu`, `Tg.Tien.Hang`): tên không có thật, chỉ sửa nếu public cho thấy kiểu tên này
-   - [ ] Bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái) → abstain cả shop
+   - [x] Bất biến lúc chạy (D11, `ingest/checks.py`, ngưỡng `config.Invariants`): vi phạm gắn vùng dữ liệu, op chạm vùng đó thì abstain. Đo bằng `eval/synth/faults.py` (6 lỗi giả lập × 24 shop): ok→wrong 7345 → **0**, shop sạch không đổi; dev 0.985, holdout 0.859 không đổi. Public v0.5: 2/14 shop `status_unrecognized` → 100 câu thành abstain
+   - [ ] Từ vựng trạng thái tổng quát + transform synth đổi cách ghi trạng thái (không sửa riêng 2 shop public, D11)
+   - [ ] `status_unrecognized` đang chặn cả vùng khi có bất kỳ giá trị lạ: cân nhắc theo tỉ lệ đơn bị ảnh hưởng
+   - [ ] Docker: cache Store/raw phải ghi vào /tmp (SPEC §7 câu 2); log bắt buộc id/answer/elapsed_ms/thinking (SPEC §7 câu 3)
    - [x] Sinh lại public (`eval/runs/public_v0.4`, 57d2d2f): vẫn **107 câu** abstain do không có bảng đơn, cùng 2 shop như v0.2/v0.3 (số 214 cũ đếm trùng). Loại câu trả lời y hệt v0.3 (abstain 690), 21 câu đổi giá trị. Các sửa ingest từ proxy chưa chạm tới 2 shop này
    - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
 3. - [ ] Luật đọc từ rulebook lúc chạy (xác minh D03 trên forum trước)

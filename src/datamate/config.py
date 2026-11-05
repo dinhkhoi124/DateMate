@@ -46,3 +46,31 @@ def from_rulebook(text: str | None) -> Rules:
     if m:
         r = replace(r, tet_end=(int(m[1]), 1))
     return r
+
+
+@dataclass(frozen=True)
+class Invariants:
+    """Run-time ingest invariants (DECISIONS D11, ingest/checks.py). Wide, meaning-based bounds: every dev shop is
+    far inside them (eval/synth/faults.py), a misread table is far outside."""
+    min_orders_with_date: float = 0.98     # orders whose date could not be read
+    max_dup_order_id: float = 0.01         # same order id twice: a table read twice or the wrong id column
+    max_after_data_end: float = 0.01       # dates after the README 'Dữ liệu có đến hết ...'
+    min_share_day_gt12: float = 0.20       # ~19/31 expected; dd/mm read as mm/dd leaves days 13..31 empty
+    year_range: tuple[int, int] = (2000, 2100)
+    min_done: float = 0.50                 # most orders are completed
+    max_cancelled: float = 0.30
+    max_returned: float = 0.30
+    min_orders_status_evidence: int = 500   # this many orders, none cancelled/returned: status unread
+    min_orders_with_rev: float = 0.90
+    max_neg_rev: float = 0.05
+    order_money_range: tuple[float, float] = (1_000.0, 1e9)   # median order in VND: '1.250.000' read as 1.25
+    max_subtotal_mismatch: float = 0.05    # line sum vs the order table's own 'tiền hàng'
+    max_orphan_lines: float = 0.05         # lines whose order id is not an order
+    max_orders_without_lines: float = 0.05
+    min_amount_vs_qty_price: float = 0.90  # line amount = qty x price (after line discount)
+    max_qty_base_lt_qty: float = 0.05      # quantity in base unit smaller than in the line unit
+    max_debt_negative: float = 0.01
+    max_debt_gt_total: float = 0.01
+
+
+INVARIANTS = Invariants()
