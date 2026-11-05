@@ -70,3 +70,15 @@ def test_walkin_and_bool():
         assert is_walkin(s)
     assert not is_walkin("Lê Văn A")
     assert parse_bool("TRUE") is True and parse_bool(0) is False and parse_bool("1") is True
+
+
+@pytest.mark.parametrize("raw,val", [
+    ("Hoàn tất", "done"), ("ĐÃ NHẬN HÀNG", "done"), ("Giao hàng thành công", "done"), ("Delivered", "done"),
+    ("Đã hủy bỏ", "cancelled"), ("Giao không thành công", "cancelled"), ("Canceled", "cancelled"),
+    ("Trả hàng/Hoàn tiền", "returned"), ("Đã nhận hàng trả", "returned"), ("Refunded", "returned"),
+    ("Chờ lấy hàng", "shipping"), ("CHƯA GIAO", "shipping"), ("Chờ xác nhận", "shipping"), ("In transit", "shipping"),
+    # negated or ambiguous: unknown, so the run-time invariant abstains instead of guessing
+    ("Chưa hoàn thành", None), ("Chuyển hoàn", None),
+])
+def test_status_other_software_labels(raw, val):
+    assert parse_status(raw) == val
