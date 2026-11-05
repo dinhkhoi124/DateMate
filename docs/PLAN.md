@@ -56,7 +56,7 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
    - [x] Tách `rename` (viết tắt thực tế: SL, ĐG, TT, CK, KH, ĐVT, PTTT, HĐ, HSD…) và `rename_hard` (tên tự chế cũ). Ingest: `vocab.ABBREVIATIONS` mở rộng viết tắt khi tên lạ (nghĩa mơ hồ thử theo thứ tự: TT = thành tiền > thanh toán > trạng thái); tên học được chung chung ('KH' → name) nhường cho bản mở rộng cụ thể. Shop không mô tả 106/109/124: rename 0/3 → 3/3
    - [ ] (thấp) rename_hard 106/109/124 (`TThai`, `GChu`, `Tg.Tien.Hang`): tên không có thật, chỉ sửa nếu public cho thấy kiểu tên này
    - [ ] Bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái) → abstain cả shop
-   - [ ] Sinh lại public: đếm câu abstain do không có bảng đơn (trước: 214)
+   - [x] Sinh lại public (`eval/runs/public_v0.4`, 57d2d2f): vẫn **107 câu** abstain do không có bảng đơn, cùng 2 shop như v0.2/v0.3 (số 214 cũ đếm trùng). Loại câu trả lời y hệt v0.3 (abstain 690), 21 câu đổi giá trị. Các sửa ingest từ proxy chưa chạm tới 2 shop này
    - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
 3. - [ ] Luật đọc từ rulebook lúc chạy (xác minh D03 trên forum trước)
 4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ
