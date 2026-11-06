@@ -179,7 +179,9 @@ thele/                 thể lệ cuộc thi
    - Thêm luật rulebook mới thì cần một hàm có docstring trích mục rulebook (`# rulebook §x: …`) và một test trong `tests/`.
    - Quyết định kiến trúc hoặc chọn model thì ghi vào `docs/DECISIONS.md` (bối cảnh → lựa chọn → lý do → hệ quả).
 4. Mở PR vào `main` và điền đủ PR template. **CI** (GitHub Actions) tự chạy lint, test, kiểm repo không có data/token
-   và build image Docker. PR chỉ merge được khi **CI xanh và lead đã approve**. Merge bằng *Squash and merge*.
+   và build image Docker. **CI xanh là bắt buộc** (GitHub chặn merge nếu CI đỏ). Review theo quy ước nhóm: mọi PR cần
+   **ít nhất 1 người khác** xem và comment hoặc approve trước khi merge; lead được tự động gán làm reviewer (CODEOWNERS).
+   Merge bằng *Squash and merge*.
    **`main` phải luôn chạy được** vì image Docker build từ đây.
 5. Tick việc đã xong trong `docs/PLAN.md`.
 

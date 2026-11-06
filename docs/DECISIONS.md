@@ -12,6 +12,7 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   - CI (GitHub Actions) chạy trên mọi PR: lint, pytest (test cần data tự skip), kiểm repo không có data/token/file lớn, build image Docker với thư mục data rỗng rồi smoke test `--network none`.
   - PR template có bảng kết quả đo và checklist (gồm xác nhận không đọc public/holdout). CODEOWNERS = lead. Dependabot chỉ cập nhật GitHub Actions.
   - `main` bảo vệ bằng ruleset: bắt buộc PR, 1 approval từ code owner, CI xanh, không force-push, squash merge.
+  - **Cập nhật 2026-11-06:** bỏ yêu cầu approval (0) và bỏ yêu cầu review từ code owner. Nhóm 3 người, tác giả PR không tự approve được, nên mỗi PR của lead phải chờ thành viên khác, quá chậm trong 10 ngày cuối. Ruleset giờ chỉ bắt buộc PR, 4 check CI xanh, squash merge, cấm force-push và xoá nhánh. Review là quy ước nhóm: ít nhất 1 người khác xem PR, có ô xác nhận trong PR template. CODEOWNERS giữ lại để lead được tự động gán làm reviewer.
 - **Lý do:** đây là bộ tối thiểu mà nhóm phần mềm thường dùng (GitHub flow + CI gate + review bắt buộc). Chi phí thấp, chặn được các lỗi nguy hiểm nhất ở đây: commit nhầm dữ liệu thi, làm hỏng `main` hay image.
 - **Hệ quả:**
   - CI không đo được độ chính xác, nên người mở PR phải tự chạy eval dev và dán số vào PR.
