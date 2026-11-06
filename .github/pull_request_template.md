@@ -27,3 +27,4 @@
 - [ ] Quyết định kiến trúc / model / dependency mới đã ghi vào `docs/DECISIONS.md`
 - [ ] **Tôi không đọc câu hỏi public và không mở dữ liệu / câu hỏi của shop holdout** khi làm PR này
 - [ ] Không hardcode theo `id`, `business_id` hay tên shop
+- [ ] Đã có ít nhất 1 người khác xem PR (comment hoặc approve) trước khi merge

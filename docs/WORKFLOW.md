@@ -51,7 +51,7 @@ TV2 và TV3 không cần biết AI. Chỉ cần dùng Excel, GitHub web và đ�
 **Luồng làm việc (GitHub flow):**
 1. `git checkout main && git pull && git checkout -b <loại>/<việc>`. Loại: `feat/` tính năng, `fix/` sửa lỗi, `qa/` dữ liệu kiểm tra, `docs/`, `chore/` công cụ.
 2. Commit nhỏ, message dạng mệnh lệnh, nói rõ thay đổi (ví dụ `Ingest: read status from Ghi chú column`).
-3. Push và mở PR vào `main`, điền đủ template (kết quả đo + checklist). Mọi PR cần **CI xanh** và **lead review** (CODEOWNERS).
+3. Push và mở PR vào `main`, điền đủ template (kết quả đo + checklist). Mọi PR cần **CI xanh** (GitHub bắt buộc) và **ít nhất 1 người khác review** (quy ước nhóm, GitHub không chặn). Lead được tự động gán làm reviewer qua CODEOWNERS. Không tự merge PR khi chưa ai xem.
 4. Merge bằng **Squash and merge**, rồi xoá branch.
 
 **Tự động hoá:**
@@ -60,7 +60,7 @@ TV2 và TV3 không cần biết AI. Chỉ cần dùng Excel, GitHub web và đ�
 |---|---|---|
 | Trên máy, trước mỗi commit | `pre-commit` (`.pre-commit-config.yaml`) | ruff, file > 1MB, conflict marker, private key, **chặn commit dữ liệu thi** |
 | Trên GitHub, mỗi PR | GitHub Actions (`.github/workflows/ci.yml`) | ruff, pytest (test cần data tự skip), không có data/token/file lớn trong repo, **build được image Docker** và import được trong container `--network none` |
-| Bảo vệ `main` | Ruleset trên GitHub | Bắt buộc PR, 1 approval từ code owner, CI xanh, không force-push, lịch sử tuyến tính |
+| Bảo vệ `main` | Ruleset `protect-main` trên GitHub | Bắt buộc qua PR, 4 check CI phải xanh, chỉ cho squash merge, cấm force-push và cấm xoá nhánh. Không bắt buộc approval: review theo quy ước nhóm |
 | Sau khi merge | Tag phiên bản `v0.x` | Mỗi lần nộp public gắn tag tương ứng, ghi vào `EXPERIMENTS.md` |
 
 **CI không chạy được eval độ chính xác** vì dữ liệu thi không được đưa lên GitHub. Người mở PR tự chạy `eval/run_eval.py --split dev` và dán số vào PR.
