@@ -68,7 +68,7 @@ jobs:
       # The real image ships data/train/train; CI has no data, so build against an empty placeholder.
       - run: mkdir -p data/train/train && touch data/train/train/.placeholder
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
