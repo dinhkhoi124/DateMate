@@ -6,9 +6,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pandas as pd
+
 from datamate.ingest.infer import infer_role
 from datamate.ingest.reader import RawTable
-from datamate.ingest.values import fold
+from datamate.ingest.values import parse_number
 from datamate.ingest.vocab import role_from_desc, role_from_name, squash
 
 _LEARNED = json.loads((Path(__file__).with_name("learned_names.json")).read_text(encoding="utf8"))
@@ -67,25 +69,49 @@ def _hint(name: str) -> str | None:
 
 
 def assign_roles(t: RawTable) -> dict[str, str]:
-    """column -> role (documented description first, then column name)."""
-    out: dict[str, str] = {}
+    """column -> role: README description, then exact column name, then name keywords + value profile.
+
+    Inferred roles come last in the dict so that build_table ('first column wins') never lets a guessed column
+    take a role that a documented or known-name column already has.
+    """
+    sure: dict[str, str] = {}
+    guessed: dict[str, str] = {}
     for c in t.df.columns:
         if c.startswith("_sheet_") or c.startswith("_col"):
             continue
         r = role_from_desc(t.doc[c]) if c in t.doc else None
         if r is None:
             r = role_from_name(c, _LEARNED)
-        if r is None and not t.doc:  # undocumented table: name keywords + value profile
-            r = infer_role(c, t.df[c])
+        if r is not None:
+            if r != "ignore":
+                sure[c] = r
+            continue
+        if c in t.doc:   # documented but no rule matched: do not guess against the README
+            continue
+        r = infer_role(c, t.df[c])   # undocumented column (whole table or just this column)
         if r and r != "ignore":
-            out[c] = r
-    return out
+            guessed[c] = r
+    taken = set(sure.values())
+    return {**sure, **{c: r for c, r in guessed.items() if r not in taken}}
+
+
+SALES_SIDE = {"customer_id", "customer_name", "order_total", "paid", "debt", "payment_method", "channel", "staff_id"}
+IMPORT_SIDE = {"supplier", "supplier_id", "import_price", "import_qty", "import_qty_base", "import_amount",
+               "receipt_total", "import_date", "import_unit"}
+
+
+def _sales_receipt(R: set, hint: str | None) -> bool:
+    """A receipt-like id ('Số phiếu') in a table that only has the customer side of a sale is the order id."""
+    return ("receipt_id" in R and "order_id" not in R and len(R & SALES_SIDE) >= 2 and not R & IMPORT_SIDE
+            and hint not in ("imports", "import_lines", "lots"))
 
 
 def classify(t: RawTable, colroles: dict[str, str]) -> str:
     R = set(colroles.values())
     prod = bool(R & {"product_id", "product_name"})
     hint = _hint(t.name)
+    if _sales_receipt(R, hint):   # 'Số phiếu' of a sales book: customer/payment columns, no supplier side
+        return "lines" if prod or R & {"qty", "qty_base", "unit_price"} else "orders"
     if "receipt_id" in R or hint in ("imports", "import_lines", "lots"):
         if "lot" in R and "expiry" in R and not R & {"import_price", "price", "import_amount"}:
             return "lots"
@@ -98,7 +124,9 @@ def classify(t: RawTable, colroles: dict[str, str]) -> str:
         return hint
     if R & {"payment_id", "paid_at", "pay_amount"} and not prod:
         return "payments"
-    if R & {"effective_date", "new_price", "old_price"}:
+    # a price list has no sold quantities: 'Giá bán lẻ' next to qty + amount + product is a sales line's unit price
+    sold = bool(R & {"qty", "qty_base"}) and bool(R & {"amount", "order_date", "date"})
+    if R & {"effective_date", "old_price"} or ("new_price" in R and not (prod and sold)):
         return "price_history"
     if R & {"delivery_no", "delivery_date", "plate", "driver"}:
         return "deliveries"
@@ -132,6 +160,7 @@ _RESOLVE = {
                  "import_lines": "import_qty_base", "returns": "return_qty_base", "*": "qty_base"},
     "qty_base_generic": {"lots": "lot_qty_base", "import_lines": "import_qty_base", "*": "lot_qty_base"},
     "price": {"import_lines": "import_price", "products": "price_current", "units": "unit_price", "*": "unit_price"},
+    "new_price": {"lines": "unit_price", "*": "new_price"},
     "unit_price": {"import_lines": "import_price", "products": "price_current", "*": "unit_price"},
     "cost": {"lines": "cost_unit", "*": "cost"},
     "discount": {"orders": "order_discount", "*": "line_discount"},
@@ -163,7 +192,40 @@ def build_table(t: RawTable) -> Table:
     # units table: a unit column next to an explicit base unit is the big unit
     if kind == "units" and "big_unit" not in roles and "unit" in roles:
         roles["big_unit"] = roles.pop("unit")
+    # sales table without an order id column: a transaction id ('Mã GD', learned as a receipt id elsewhere) is it
+    for alt in ("payment_id", "receipt_id"):
+        if kind in ("lines", "orders") and "order_id" not in roles and alt in roles:
+            roles["order_id"] = roles.pop(alt)
+    if kind == "lines":
+        _fix_line_money(t, roles)
     return Table(t.name, kind, t.df, roles, t.sources)
+
+
+def _fix_line_money(t: RawTable, roles: dict[str, str], min_rows: int = 20):
+    """Line table: a money column named like an order total ('Tổng tiền') that equals qty x unit price (- line
+    discount) on the lines, and varies within multi-line orders, is the line amount (rulebook §1 thành tiền dòng)."""
+    col = roles.get("order_total")
+    if col is None or "amount" in roles or "qty" not in roles or "unit_price" not in roles:
+        return
+    df = t.df
+    num = lambda c: df[c].map(parse_number)  # noqa: E731
+    v, q, p = num(col), num(roles["qty"]), num(roles["unit_price"])
+    disc = num(roles["line_discount"]).fillna(0.0) if "line_discount" in roles else 0.0
+    ok = v.notna() & q.notna() & p.notna()
+    if ok.sum() < min_rows:
+        return
+    exp = (q * p - disc)[ok]
+    match = ((v[ok] - exp).abs() <= (exp.abs() * 0.005).clip(lower=1.0)).mean()
+    if match < 0.9:
+        return
+    oc = roles.get("order_id")
+    if oc is not None:   # an order total repeats on every line of the order
+        g = pd.DataFrame({"o": df[oc].ffill(), "v": v})[ok]
+        multi = g.groupby("o")["v"].agg(["size", "nunique"])
+        multi = multi[multi["size"] >= 2]
+        if len(multi) and (multi["nunique"] == 1).mean() > 0.5:
+            return
+    roles["amount"] = roles.pop("order_total")
 
 
 def describe(tables: list[Table]) -> str:

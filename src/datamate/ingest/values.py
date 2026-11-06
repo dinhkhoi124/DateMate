@@ -218,21 +218,35 @@ DONE, CANCELLED, RETURNED, SHIPPING = "done", "cancelled", "returned", "shipping
 
 # matched on fold()ed text; order matters (first hit wins)
 _STATUS_RULES = [
-    (RETURNED, r"tra hang|tra lai|hoan hang|hoan tra|doi tra|hang tra ve|tra ve|return|refund|khong giao duoc"),
-    (CANCELLED, r"\bhuy\b|cancel|void"),  # \b: 'van chuyen' contains 'huy'
-    (SHIPPING, r"dang giao|dang van chuyen|dang gui|shipping|delivering|dang xu ly|dang giao dich|cho giao|pending"),
-    (DONE, r"hoan thanh|xong|da lay|da giao|thanh cong|completed|complete|done|^ok$|success|da thanh toan"),
+    # 'nhận hàng trả' (shop received the returned goods) must not read as 'đã nhận hàng' (customer received them)
+    (RETURNED, r"tra hang|tra lai|hoan hang|hoan tra|hoan tien|doi tra|hang tra ve|tra ve|nhan hang tra|return|refund"),
+    # \b: 'van chuyen' contains 'huy'. 'Không giao được' = order never delivered -> cancelled (shops that use it have
+    # no other cancel label; train cancel rates only match with this reading)
+    (CANCELLED, r"\bhuy\b|cancel|void|khong giao duoc|giao khong thanh cong|khong thanh cong|giao that bai|bom hang"),
+    # not finished yet: waiting for confirmation / pickup / packing counts as in progress (rulebook: 'đang giao')
+    (SHIPPING, r"dang giao|dang van chuyen|dang gui|shipping|delivering|dang xu ly|dang giao dich|cho giao|pending"
+               r"|cho xac nhan|da xac nhan|cho lay hang|dang chuan bi|dang dong goi|cho xu ly|chua giao|in transit"
+               r"|processing"),
+    (DONE, r"hoan thanh|hoan tat|xong|da lay|da giao|da nhan hang|thanh cong|completed|complete|done|^ok$|success"
+           r"|da thanh toan|delivered|finished|fulfilled"),
 ]
 _STATUS_RULES = [(k, re.compile(p)) for k, p in _STATUS_RULES]
+_NEGATED = re.compile(r"\b(chua|khong)\b")
 
 
 def parse_status(x) -> str | None:
-    """Map raw order status text to one of done/cancelled/returned/shipping (rulebook §8)."""
+    """Map raw order status text to one of done/cancelled/returned/shipping (rulebook §8).
+
+    Unknown or ambiguous wording ('Chuyển hoàn') stays None: the Store keeps it as unrecognized and the run-time
+    invariant (ingest/checks.py) abstains instead of guessing. A negated label ('chưa hoàn thành') is never done.
+    """
     if is_blank(x):
         return None
     s = fold(str(x))
     for k, rx in _STATUS_RULES:
         if rx.search(s):
+            if k == DONE and _NEGATED.search(s):
+                return None
             return k
     return None
 

@@ -16,7 +16,9 @@
 - Model 14B dùng bản AWQ 4-bit (khoảng 9GB, vừa 1 T4). Model 8B FP16 thì chia ra 2 T4 (`tensor_parallel_size=2`).
 - Tốc độ T4 chậm hơn 5090 khoảng 4–6 lần. Thời gian đo trên Kaggle chỉ để ước lượng, số thật phải đo trên 5090.
 
-## 2. Quy trình Kaggle (bạn chạy, tôi soạn script)
+## 2. Quy trình Kaggle (lead chạy)
+
+> ⏳ **Chưa có:** `notebooks/kaggle_llm.ipynb` và `scripts/remote/llm_parse.py` sẽ được thêm khi bắt đầu phần LLM (PLAN 08–10/11). Phần dưới là quy trình dự kiến.
 
 **Thiết lập một lần:**
 1. Kaggle → Datasets → New → upload `data/train.zip` dưới dạng **Private**, đặt tên `datamate-train`. **Không upload public test.**
@@ -24,14 +26,14 @@
 3. Nếu repo GitHub để private: Add-ons → Secrets → thêm `GITHUB_TOKEN` (fine-grained, chỉ quyền read repo).
 
 **Mỗi lần chạy:**
-1. Mở notebook `notebooks/kaggle_llm.ipynb` (tôi soạn sẵn): Accelerator **GPU T4 x2**, Internet **On**, Add data `datamate-train`.
+1. Mở notebook `notebooks/kaggle_llm.ipynb`: Accelerator **GPU T4 x2**, Internet **On**, Add data `datamate-train`.
 2. Ô đầu tiên chạy `git clone` repo và `pip install`. Ô tiếp theo chạy:
    ```
    python scripts/remote/llm_parse.py --model <hf_id> --split dev --out /kaggle/working/out
    ```
 3. Bấm **Save Version → Save & Run All** để chạy nền, không cần mở trình duyệt.
-4. Khi xong, vào tab Output → tải `out.zip` → giải nén vào `eval/remote/<tên-run>/` ở local, rồi báo tôi tên run.
-5. Tôi chạy `eval/run_eval.py --intents eval/remote/<tên-run>/intents.jsonl`, phân tích lỗi rồi sửa prompt hoặc parser. Lặp lại.
+4. Khi xong, vào tab Output → tải `out.zip` → giải nén vào `eval/remote/<tên-run>/` ở local, rồi ghi tên run vào PR.
+5. Chạy `eval/run_eval.py --intents eval/remote/<tên-run>/intents.jsonl`, phân tích lỗi rồi sửa prompt hoặc parser. Lặp lại.
 
 ## 3. Phân công nhóm
 
@@ -44,7 +46,28 @@
 
 TV2 và TV3 không cần biết AI. Chỉ cần dùng Excel, GitHub web và đọc tiếng Việt cẩn thận.
 
-## 4. Git
-- `main` luôn chạy được. Làm việc trên branch `feat/<việc>` rồi mở PR. Commit nhỏ, message rõ ràng.
-- Không commit `data/`, weights, `eval/runs/`. Kết quả tóm tắt ghi vào `docs/EXPERIMENTS.md`.
-- Repo phải public trước hạn (quy định 8.2). Trước khi public, kiểm tra lại không có dữ liệu thi và token trong lịch sử commit.
+## 4. Git, review và CI
+
+**Luồng làm việc (GitHub flow):**
+1. `git checkout main && git pull && git checkout -b <loại>/<việc>`. Loại: `feat/` tính năng, `fix/` sửa lỗi, `qa/` dữ liệu kiểm tra, `docs/`, `chore/` công cụ.
+2. Commit nhỏ, message dạng mệnh lệnh, nói rõ thay đổi (ví dụ `Ingest: read status from Ghi chú column`).
+3. Push và mở PR vào `main`, điền đủ template (kết quả đo + checklist). Mọi PR cần **CI xanh** và **lead review** (CODEOWNERS).
+4. Merge bằng **Squash and merge**, rồi xoá branch.
+
+**Tự động hoá:**
+
+| Lớp | Công cụ | Kiểm gì |
+|---|---|---|
+| Trên máy, trước mỗi commit | `pre-commit` (`.pre-commit-config.yaml`) | ruff, file > 1MB, conflict marker, private key, **chặn commit dữ liệu thi** |
+| Trên GitHub, mỗi PR | GitHub Actions (`.github/workflows/ci.yml`) | ruff, pytest (test cần data tự skip), không có data/token/file lớn trong repo, **build được image Docker** và import được trong container `--network none` |
+| Bảo vệ `main` | Ruleset trên GitHub | Bắt buộc PR, 1 approval từ code owner, CI xanh, không force-push, lịch sử tuyến tính |
+| Sau khi merge | Tag phiên bản `v0.x` | Mỗi lần nộp public gắn tag tương ứng, ghi vào `EXPERIMENTS.md` |
+
+**CI không chạy được eval độ chính xác** vì dữ liệu thi không được đưa lên GitHub. Người mở PR tự chạy `eval/run_eval.py --split dev` và dán số vào PR.
+
+**Không làm CD đẩy image lên registry:** image chứa dữ liệu train, nên không được đẩy lên registry public (GHCR, Docker Hub). Image nộp bài được build trên máy lead hoặc máy thuê GPU.
+
+**Quy định:**
+- `main` luôn chạy được.
+- Không commit `data/`, weights, `eval/runs/`, token. Kết quả tóm tắt ghi vào `docs/EXPERIMENTS.md`.
+- Không đọc câu hỏi public và không mở dữ liệu hay câu hỏi của 6 shop holdout. Đây là luật tự giác, và mỗi PR phải xác nhận trong checklist.

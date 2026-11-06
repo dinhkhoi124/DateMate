@@ -24,7 +24,8 @@ from datamate.ingest.values import parse_date
 _H2 = re.compile(r"^##\s+(.+?)\s*$", re.M)
 _FILE = re.compile(r"^-\s+`(.+?)`(?:\s*\((\w+)\))?", re.M)
 _COL = re.compile(r"^-\s+\*\*(.+?)\*\*\s*:\s*(.+?)\s*$", re.M)
-_SEC_FILE = re.compile(r"Cột trong\s+`(.+?)`", re.I)
+_SEC_FILE = re.compile(r"Cột trong\s+`(.+?)`(?:\s*,\s*sheet\s+`(.+?)`)?", re.I)
+SHEET_SEP = "::"  # columns key of one sheet of a multi-sheet file: "<file>::<sheet>"
 _DATA_END = re.compile(r"[Dd]ữ liệu có (?:đến|tới) hết (?:ngày )?(\d{1,2}/\d{1,2}/\d{4})")
 _DATA_START = re.compile(r"[Dd]ữ liệu (?:có )?từ (?:ngày )?(\d{1,2}/\d{1,2}/\d{4})")
 _UNIT_CONV = re.compile(r"^\s*-\s+(.+?):\s*1\s+(.+?)\s*=\s*([\d.,]+)\s+(.+?)\s*$", re.M)
@@ -51,9 +52,11 @@ class ReadmeSpec:
     def columns_for(self, file_or_table: str) -> list[ColumnSpec]:
         if file_or_table in self.columns:
             return self.columns[file_or_table]
+        if SHEET_SEP in file_or_table:   # one sheet: exact key only (no stem fallback to another sheet)
+            return []
         stem = Path(file_or_table).stem
         for k, v in self.columns.items():
-            if Path(k).stem == stem:
+            if SHEET_SEP not in k and Path(k).stem == stem:
                 return v
         return []
 
@@ -72,8 +75,9 @@ def parse_readme(path: Path | str) -> ReadmeSpec:
         tl = title.lower()
         if tl.startswith("file"):
             spec.files = [m.group(1) for m in _FILE.finditer(body)]
-        elif _SEC_FILE.search(title):
-            spec.columns[_SEC_FILE.search(title).group(1)] = [ColumnSpec(c.strip(), d.strip()) for c, d in _COL.findall(body)]
+        elif m := _SEC_FILE.search(title):   # '## Cột trong `f.xlsx`, sheet `S`' documents one sheet only
+            key = f"{m.group(1)}{SHEET_SEP}{m.group(2)}" if m.group(2) else m.group(1)
+            spec.columns[key] = [ColumnSpec(c.strip(), d.strip()) for c, d in _COL.findall(body)]
         elif tl.startswith("bảng") or tl.startswith("bang"):
             _parse_sqlite_section(title, body, spec)
         elif "quy ước" in tl or "quy uoc" in tl or "ghi chú" in tl:

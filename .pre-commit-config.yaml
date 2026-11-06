@@ -1,0 +1,26 @@
+# Local checks before each commit. Install once: .venv/Scripts/pre-commit install
+# Run on everything: .venv/Scripts/pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.4
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: no-competition-data
+        name: Competition data must not be committed (data/, *.zip, questions/answers.jsonl)
+        language: fail
+        entry: "Do not commit competition data (CLAUDE.md rule 7):"
+        files: '^data/|\.zip$|questions\.jsonl$|answers\.jsonl$'

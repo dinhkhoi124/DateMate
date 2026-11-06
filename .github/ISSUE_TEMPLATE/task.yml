@@ -1,0 +1,16 @@
+name: Việc cần làm
+description: Một đầu việc trong docs/PLAN.md hoặc một cải tiến mới
+labels: [task]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Mục tiêu
+      description: Làm gì, đo bằng chỉ số nào (PA dev, proxy shop lạ, thời gian...)
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Xong khi
+      description: Tiêu chí hoàn thành

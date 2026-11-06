@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Keep CI actions current. Python deps are pinned on purpose (determinism, Docker image) and updated by hand.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from datamate.config import cache_root
 from datamate.ingest.readme import ReadmeSpec, parse_readme
 from datamate.ingest.reader import read_shop
 from datamate.ingest.tables import Table, build_table
@@ -24,8 +25,9 @@ from datamate.ingest.values import (
     parse_datetime, parse_number, parse_payment, parse_qty, parse_status, parse_time,
 )
 
-STORE_VERSION = "s1"
-CACHE_DIR = Path(__file__).resolve().parents[3] / "cache" / "store"
+STORE_VERSION = "s2"
+def _cache_dir() -> Path:
+    return cache_root() / "store"
 
 SUMMARY_ROW = r"^(tong|cong|total|sub ?total|sum)( (ngay|thang|tuan|nam|quy|ky|cong|so|tien|doanh thu)\b|\s*$|\s*[:\d])"
 
@@ -413,7 +415,7 @@ class Store:
 
     # ------------------------------------------------------------------ finalize: keys, units, statuses
     def _finalize(self):
-        P, L, O = self.products, self.lines, self.orders
+        P, L = self.products, self.lines
         # product keys: id when available, else name key; map names -> ids via catalog
         id_by_name = {}
         if len(P):
@@ -436,7 +438,8 @@ class Store:
             f = fold(pn) if isinstance(pn, str) and pn else None
             if f in fold_map and len(fold_map[f]) == 1:
                 return next(iter(fold_map[f]))
-            return k
+            # rulebook §8: names that differ only in case/spacing/diacritics denote the same item
+            return f or k
 
         def keyify(df):
             if df is None or not len(df):
@@ -631,7 +634,8 @@ class Store:
     def _caps_and_checks(self):
         O, L = self.orders, self.lines
         nn = lambda df, c: df is not None and len(df) and c in df and df[c].notna().any()  # noqa: E731
-        dates = [d for d in (O["order_date"] if O is not None and len(O) else []) if d]
+        dates = [d for d in (O["order_date"] if O is not None and len(O) and "order_date" in O else [])
+                 if isinstance(d, date)]  # NaN floats are truthy: keep real dates only
         self.caps = {
             "has_order_id": bool(len(L) and L["_has_oid"].any()) if len(L) else bool(len(O)),
             "has_lines": bool(len(L)), "has_customers": bool(nn(O, "customer_id") or nn(O, "customer_name")),
@@ -677,7 +681,7 @@ def _cache_path(shop_dir: Path) -> Path | None:
             st = p.stat()
             sig.append(f"{p.name}|{st.st_size}|{st.st_mtime_ns}")
         h = hashlib.md5(("|".join(sig) + STORE_VERSION + _code_sig()).encode()).hexdigest()[:16]
-        return CACHE_DIR / f"{shop_dir.name}_{h}.pkl"
+        return _cache_dir() / f"{shop_dir.name}_{h}.pkl"
     except OSError:
         return None
 
