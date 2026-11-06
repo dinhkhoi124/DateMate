@@ -1,5 +1,4 @@
 """Regression tests for core rule fixes, on dev shops only (never holdout)."""
-from datetime import date
 from pathlib import Path
 
 import pytest

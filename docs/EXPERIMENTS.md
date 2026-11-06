@@ -19,6 +19,7 @@ Quy ước:
 | 2026-11-05 | v0.4 + từ vựng trạng thái | `_STATUS_RULES` mở rộng (hoàn tất, đã nhận hàng, giao hàng thành công, trả hàng/hoàn tiền, nhận hàng trả, chờ xác nhận/lấy hàng, chưa giao…), chặn phủ định | **0.985** (2410/0/37) | **0.859** (485/10/58) | 98.0% | 89.5% | – | 230s dev | Synth `status_words` 24 shop: trước sửa 24/24 bị chặn (nhóm 1: 0 sai, 721 abstain); sau sửa ingest 22/24, PA 0.900, 0 sai, 207 abstain (2 shop nhãn mơ hồ 'Chuyển hoàn'). fp_snapshot 24/24 không đổi. Public v0.6 không đổi so với v0.5 |
 | 2026-11-05 | v0.4 + Docker readiness | Cache qua `DATAMATE_CACHE`, log {id, answer, elapsed_ms, thinking}, Dockerfile rule-only | **0.985** (2410/0/37) | – | – | – | – | – | Không đổi logic. 142 test pass, `submit_check` PASS. Image chưa build (Docker daemon tắt) |
 | 2026-11-06 | v0.4 rule-only image | Build `docker/Dockerfile`, chạy lệnh BTC (`--network none --shm-size=16g`, không `--gpus`) trên `data/train/train` | – | – | – | – | – | 386s / 3000 câu (container), 258s local | Train all: 2895/10/95, PA 0.962, precision 99.7%. Submission container = local 3000/3000, `submit_check` PASS, `logs/log.jsonl` 3000 dòng. Image 1.08GB |
+| 2026-11-06 | v0.4 + lint cleanup (D13) | ruff: bỏ 11 import thừa, 1 biến thừa, đưa import lên đầu `eval/synth/make.py` | **0.985** (2410/0/37) | – | – | – | – | 278s dev | Không đổi logic, dev giữ nguyên. 142 test pass |
 
 ## Theo intent (bản mới nhất)
 

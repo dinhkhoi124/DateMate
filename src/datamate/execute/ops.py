@@ -7,13 +7,13 @@ or Abstain (we are not sure).
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
 import pandas as pd
 
 from datamate.execute.facts import Facts, day64
-from datamate.ingest.values import CANCELLED, COD, DEBT, fold
+from datamate.ingest.values import fold
 
 
 class Unanswerable(Exception):

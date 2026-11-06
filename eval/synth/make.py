@@ -22,10 +22,10 @@ from unidecode import unidecode
 from datamate.ingest.reader import _detect_header, _doc_for, _known_names, _read_excel_all, fix_mojibake, sheet_period
 from datamate.ingest import readme as _readme
 from datamate.ingest.readme import parse_readme
-
-SHEET_SEP = getattr(_readme, "SHEET_SEP", "::")
 from datamate.ingest.values import fold
 from datamate.ingest.vocab import squash
+
+SHEET_SEP = getattr(_readme, "SHEET_SEP", "::")
 
 ROOT = Path(__file__).resolve().parents[2]
 TRAIN = ROOT / "data" / "train" / "train"

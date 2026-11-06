@@ -26,7 +26,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from datamate.ingest.checks import blocking, metrics, violations  # noqa: E402

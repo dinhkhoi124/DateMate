@@ -415,7 +415,7 @@ class Store:
 
     # ------------------------------------------------------------------ finalize: keys, units, statuses
     def _finalize(self):
-        P, L, O = self.products, self.lines, self.orders
+        P, L = self.products, self.lines
         # product keys: id when available, else name key; map names -> ids via catalog
         id_by_name = {}
         if len(P):

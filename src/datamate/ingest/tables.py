@@ -10,7 +10,7 @@ import pandas as pd
 
 from datamate.ingest.infer import infer_role
 from datamate.ingest.reader import RawTable
-from datamate.ingest.values import fold, parse_number
+from datamate.ingest.values import parse_number
 from datamate.ingest.vocab import role_from_desc, role_from_name, squash
 
 _LEARNED = json.loads((Path(__file__).with_name("learned_names.json")).read_text(encoding="utf8"))

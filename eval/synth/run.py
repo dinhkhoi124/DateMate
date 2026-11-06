@@ -25,7 +25,7 @@ import numpy as np  # noqa: E402
 
 from datamate.execute.facts import facts_of  # noqa: E402
 from datamate.ingest.store import Store  # noqa: E402
-from datamate.pipeline import Context, abstain, answer  # noqa: E402
+from datamate.pipeline import Context, answer  # noqa: E402
 from eval.scorer import load_jsonl, score  # noqa: E402
 from eval.synth.make import TRAIN, TRANSFORMS, make  # noqa: E402
 

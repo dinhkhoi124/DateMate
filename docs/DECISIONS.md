@@ -4,6 +4,20 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D13 — Quy trình nhóm: pre-commit + GitHub Actions CI + ruleset cho main (2026-11-06)
+- **Bối cảnh:** sắp có thêm 2 thành viên clone repo và mở PR. Image nộp bài build từ `main`, nên `main` hỏng là mất lượt nộp. Repo để public. Dữ liệu thi không được đưa lên GitHub.
+- **Lựa chọn:**
+  - `ruff==0.14.4` (lint, luật mặc định E4/E7/E9/F, bỏ E741) và `pre-commit` thêm vào extra `dev`. Không bật formatter để tránh diff lớn trên code đang chạy ổn.
+  - `pre-commit`: ruff, chặn file > 1MB, conflict marker, private key, và hook chặn commit `data/`, `*.zip`, `questions/answers.jsonl`.
+  - CI (GitHub Actions) chạy trên mọi PR: lint, pytest (test cần data tự skip), kiểm repo không có data/token/file lớn, build image Docker với thư mục data rỗng rồi smoke test `--network none`.
+  - PR template có bảng kết quả đo và checklist (gồm xác nhận không đọc public/holdout). CODEOWNERS = lead. Dependabot chỉ cập nhật GitHub Actions.
+  - `main` bảo vệ bằng ruleset: bắt buộc PR, 1 approval từ code owner, CI xanh, không force-push, squash merge.
+- **Lý do:** đây là bộ tối thiểu mà nhóm phần mềm thường dùng (GitHub flow + CI gate + review bắt buộc). Chi phí thấp, chặn được các lỗi nguy hiểm nhất ở đây: commit nhầm dữ liệu thi, làm hỏng `main` hay image.
+- **Hệ quả:**
+  - CI không đo được độ chính xác, nên người mở PR phải tự chạy eval dev và dán số vào PR.
+  - Không làm CD đẩy image lên registry, vì image chứa dữ liệu train.
+  - Dọn 11 import thừa và 1 biến thừa: dev không đổi (2410/0/37).
+
 ### D12 — Docker: cache ở /tmp, log từng câu cạnh submission, image rule-only trước (2026-11-05)
 - **Bối cảnh:** Docker Guide (SPEC §7 câu 2–3): `/data` read-only, file tạm phải ở `/tmp`, BTC chạy `bash /code/predict.sh` không tham số. Mỗi câu phải log `id, answer, elapsed_ms, thinking` (thinking là reasoning gốc). Trước đây cache raw/Store ghi vào `<repo>/cache`.
 - **Lựa chọn:**

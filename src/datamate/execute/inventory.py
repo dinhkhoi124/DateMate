@@ -4,7 +4,7 @@ and sales recorded after D.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
 import pandas as pd

@@ -7,7 +7,6 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from datamate.execute.ops import channel_class
 from datamate.link.catalog import Linker
 from datamate.parse.intent import Intent
 from datamate.timeparse.periods import Period

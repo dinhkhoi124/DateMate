@@ -1,5 +1,9 @@
 # DataMate — Zalo AI Challenge 2026
 
+[![CI](https://github.com/dinhkhoi124/DateMate/actions/workflows/ci.yml/badge.svg)](https://github.com/dinhkhoi124/DateMate/actions/workflows/ci.yml)
+![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 Agent trả lời câu hỏi tiếng Việt trên dữ liệu bảng (csv / xlsx / sqlite) của các shop nhỏ, track **DataMate**.
 
 Điểm chấm là **PA = (Đúng − Sai) / N**. Trả lời sai bị trừ 1, còn abstain (từ chối trả lời) được 0. Vì vậy hệ thống
@@ -88,7 +92,17 @@ unzip public_test.zip -d data/public_test
 ```bash
 .venv/Scripts/python -m pytest tests -q
 # Có data: 142 passed. Chưa có data: 138 passed, 4 skipped.
+.venv/Scripts/ruff check src eval analysis tests
 ```
+
+### Bật pre-commit (bắt buộc, làm một lần)
+
+```bash
+.venv/Scripts/pre-commit install
+```
+
+Từ đó mỗi lần `git commit` sẽ tự chạy ruff và **chặn commit nhầm dữ liệu thi** (`data/`, `*.zip`,
+`questions/answers.jsonl`), file > 1MB, private key.
 
 ---
 
@@ -138,6 +152,7 @@ tests/                 unit test, mỗi luật rulebook có test riêng
 docker/                Dockerfile, predict.sh, manifest (xem docker/README.md)
 docs/                  SPEC, ARCHITECTURE, PLAN, DECISIONS, EXPERIMENTS, WORKFLOW
 thele/                 thể lệ cuộc thi
+.github/               CI (workflows/ci.yml), PR template, issue templates, CODEOWNERS, dependabot
 ```
 
 | Tài liệu | Đọc khi |
@@ -163,8 +178,13 @@ thele/                 thể lệ cuộc thi
    - Ghi một dòng vào `docs/EXPERIMENTS.md` (version, thay đổi, PA, đúng/sai/abstain).
    - Thêm luật rulebook mới thì cần một hàm có docstring trích mục rulebook (`# rulebook §x: …`) và một test trong `tests/`.
    - Quyết định kiến trúc hoặc chọn model thì ghi vào `docs/DECISIONS.md` (bối cảnh → lựa chọn → lý do → hệ quả).
-4. Mở PR vào `main`, nhờ lead review. **`main` phải luôn chạy được** vì image Docker build từ đây.
+4. Mở PR vào `main` và điền đủ PR template. **CI** (GitHub Actions) tự chạy lint, test, kiểm repo không có data/token
+   và build image Docker. PR chỉ merge được khi **CI xanh và lead đã approve**. Merge bằng *Squash and merge*.
+   **`main` phải luôn chạy được** vì image Docker build từ đây.
 5. Tick việc đã xong trong `docs/PLAN.md`.
+
+Báo lỗi hoặc đề xuất việc thì mở **Issue** theo template (chỉ dùng câu hỏi của shop dev). Chi tiết về phân vai,
+GPU và CI ở [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
 
 **Quy ước code:** Python 3.11; đọc file luôn dùng `encoding="utf8"`; chuẩn hoá Unicode NFC; tên trả về lấy nguyên từ
 dữ liệu; sắp xếp ổn định (tie-break theo mã) để kết quả deterministic; thêm dependency thì ghi vào cả `pyproject.toml`

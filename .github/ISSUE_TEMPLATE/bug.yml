@@ -1,0 +1,24 @@
+name: Câu trả lời sai / lỗi
+description: Pipeline trả lời sai, crash, hoặc ingest đọc sai một shop dev
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "⚠️ Chỉ báo lỗi trên shop **dev**. Không dán câu hỏi public hay dữ liệu của shop holdout."
+  - type: input
+    id: qid
+    attributes:
+      label: Mã câu hỏi / shop (dev)
+      placeholder: q_xxxxxxxx, biz_101
+  - type: textarea
+    id: what
+    attributes:
+      label: Hiện tượng
+      description: Đáp án hệ thống, đáp án đúng, intent đã parse (lấy từ `--errors` hoặc log.jsonl)
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Nguyên nhân / luật liên quan (nếu biết)
+      description: Mục rulebook, cột dữ liệu, cách tính tay trên Excel

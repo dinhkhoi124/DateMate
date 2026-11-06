@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from datamate.execute.facts import Facts
-from datamate.execute.ops import Abstain, Unanswerable, channel_class
+from datamate.execute.ops import Unanswerable, channel_class
 from datamate.ingest.values import COD, DEBT
 
 
