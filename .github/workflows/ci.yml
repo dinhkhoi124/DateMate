@@ -9,9 +9,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# On a PR a new push supersedes the old run. On main every commit keeps its own result,
+# so a quick sequence of merges does not leave cancelled runs in main's history.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
