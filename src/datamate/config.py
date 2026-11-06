@@ -5,8 +5,10 @@ Defaults are the train rulebook values; `from_rulebook(text)` re-reads them from
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from unidecode import unidecode
 
@@ -74,3 +76,10 @@ class Invariants:
 
 
 INVARIANTS = Invariants()
+
+
+def cache_root() -> Path:
+    """Writable cache dir. SPEC §7 câu 2: in Docker /data is read-only and temp files go to /tmp, so predict.sh sets
+    DATAMATE_CACHE=/tmp/datamate_cache. Default (dev): <repo>/cache."""
+    env = os.environ.get("DATAMATE_CACHE")
+    return Path(env) if env else Path(__file__).resolve().parents[2] / "cache"

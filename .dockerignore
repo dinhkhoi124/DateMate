@@ -1,0 +1,16 @@
+# Keep the build context small: only what docker/Dockerfile copies.
+.git
+.venv
+.claude
+.vscode
+cache
+**/__pycache__
+**/*.pyc
+.pytest_cache
+*.zip
+data/public_test
+eval/runs
+eval/synth/out
+analysis/out
+models
+weights

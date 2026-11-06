@@ -106,7 +106,7 @@ Mỗi dòng submission: `{"id": "...", "type": "...", "answer": ...}`.
    Theo Docker Guide §3.1:
    /data/ ← read-only
    ├── data/<business_id>/
-   │ ├── _.csv | _.xlsx | \*.sqlite
+   │ ├── *.csv | *.xlsx | *.sqlite
    │ └── README.md
    ├── rulebook.md ← riêng cho từng split
    ├── calendar.csv ← lịch âm–dương
@@ -142,3 +142,47 @@ Image Docker phải chứa cả code train, dữ liệu train và manifest check
 Với câu hỏi xếp hạng: hoà thì sắp theo mã tăng dần. Câu nào hoà ngay tại ranh giới top-k đã bị BTC loại khỏi bộ test.
 
 4. "Có được xem cấu trúc dữ liệu public để cải thiện bộ đọc không" Câu trả lời: chắn chắn có nhé.
+
+---
+
+Submission contract
+Hạng mục Yêu cầu chính thức Nguồn
+Input /data (read-only): questions.jsonl, rulebook.md, calendar.csv, data/<business_id>/ Guide §3.1, Rule 5
+File tạm Ghi ở chỗ khác, ví dụ /tmp Guide §2
+Output /result/submission.jsonl. Ghi ngay sau mỗi câu. Tự tạo thư mục nếu chưa có Guide §3.2, §5
+Log ✅ Bắt buộc. Ghi vào /result/logs/, mỗi câu một record, định dạng tuỳ ý Guide §3.3
+Entrypoint /code/predict.sh. BTC chạy bash /code/predict.sh, không truyền tham số Guide §4, §5
+Các trường log bắt buộc
+Trường Khi nào
+id, answer Luôn có
+elapsed_ms Luôn có. Số nguyên mili-giây từ lúc câu bắt đầu đến khi có đáp án. Nếu chạy theo batch thì tính từ lúc câu vào batch
+thinking Luôn có. Reasoning gốc, không tóm tắt, không cắt. Nếu gọi model nhiều lần thì là list theo thứ tự. Ghi null nếu không có reasoning
+code, output Khi có chạy code. Với hàm viết sẵn thì ghi thêm inputs
+Tài nguyên và thời gian
+Hạng mục Giới hạn
+GPU 2 × RTX 5090, 32 GB mỗi card (tổng 64 GB)
+RAM 512 GB
+CPU ❓ Không được nêu
+Shared memory --shm-size=16g
+Mạng Tắt hoàn toàn (--network none)
+Thời gian 6 giờ cho toàn bộ private test, tính cả load model. Hết giờ thì container bị dừng, câu chưa ghi tính là abstain
+Kích thước image ≤ 100 GB khi chưa nén (file .tar từ docker save)
+Model Tổng ≤ 15B tham số cho mọi model dùng lúc inference
+Yêu cầu Docker
+Hạng mục Yêu cầu
+Base image Khuyến nghị vllm/vllm-openai:v0.10.1.1. Dùng image khác thì phải hỗ trợ RTX 5090 (compute capability 12.0, CUDA ≥ 12.8)
+Platform linux/amd64
+Tag zaic2026_datamate_<team_name>:final (tên đội viết thường)
+ENTRYPOINT Đặt ENTRYPOINT []. BTC chạy với --entrypoint bash, nên ENTRYPOINT riêng của image sẽ không được dùng
+Biến môi trường HF_HUB_OFFLINE=1, TRANSFORMERS_OFFLINE=1. Nếu cặp GPU không có P2P thì thêm NCCL_P2P_DISABLE=1
+Cấu hình Model, seed, temperature, batch size… phải cố định sẵn trong code. BTC không chỉnh
+Nội dung image Code inference, weights, predict.sh, README.md và /code/training_code/ (code train, dữ liệu train, logs, data_manifest.json kèm SHA-256)
+
+Lệnh chấm của BTC (dùng nguyên lệnh này để tự kiểm tra):
+
+bash
+docker run --rm --gpus '"device=0,1"' --network none --shm-size=16g \
+ --entrypoint bash \
+ -v /path/to/public*test:/data:ro \
+ -v /path/to/output:/result \
+ zaic2026_datamate_<team_name>:final /code/predict.sh

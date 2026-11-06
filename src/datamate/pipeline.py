@@ -101,8 +101,29 @@ def analyse(q: dict, ctx: Context):
     return it, t, {"id": q["id"], "type": typ, "answer": val}
 
 
-def answer(q: dict, ctx: Context) -> dict:
+def trace_of(t: str, it, row: dict) -> dict:
+    """Log fields besides id/answer/elapsed_ms (SPEC submission contract, Guide §3.3).
+    thinking: model reasoning, None when no model ran (rule parser). The executor is a pre-written function, so the
+    contract asks for code (which function), inputs and output."""
+    inputs = {"normalized_question": t}
+    if it is not None:
+        inputs.update(op=it.op, atype=it.atype, filters=it.flt, args=it.args,
+                      periods=[{"label": p.label, "kind": p.kind, "start": p.start.isoformat(),
+                                "end": p.end.isoformat()} for p in it.periods])
+        if it.note:
+            inputs["note"] = it.note
+    return {"thinking": None,
+            "code": f"datamate.execute.dispatch.run(op={it.op!r})" if it is not None else None,
+            "inputs": inputs,
+            "output": {k: v for k, v in row.items() if k != "id"}}
+
+
+def answer_traced(q: dict, ctx: Context) -> tuple[dict, dict]:
     it, t, row = analyse(q, ctx)
     if ctx.debug:
         print(q["id"], t, it, row, file=sys.stderr)
-    return row
+    return row, trace_of(t, it, row)
+
+
+def answer(q: dict, ctx: Context) -> dict:
+    return answer_traced(q, ctx)[0]

@@ -4,6 +4,18 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D12 — Docker: cache ở /tmp, log từng câu cạnh submission, image rule-only trước (2026-11-05)
+- **Bối cảnh:** Docker Guide (SPEC §7 câu 2–3): `/data` read-only, file tạm phải ở `/tmp`, BTC chạy `bash /code/predict.sh` không tham số. Mỗi câu phải log `id, answer, elapsed_ms, thinking` (thinking là reasoning gốc). Trước đây cache raw/Store ghi vào `<repo>/cache`.
+- **Lựa chọn:**
+  - `config.cache_root()` đọc `DATAMATE_CACHE`, mặc định `<repo>/cache` cho dev. `predict.sh` đặt `/tmp/datamate_cache`. Ghi cache lỗi thì bỏ qua, không crash.
+  - `run.py` ghi `/result/logs/log.jsonl` (cờ `--log`, mặc định `<thư mục submission>/logs/log.jsonl`; Guide §3.3), flush từng câu. `answer` là dòng submission bỏ `id`. `thinking` = `null` vì pipeline luật không có reasoning của model (contract: không có reasoning thì ghi null). Vết xử lý nằm ở `code` (hàm executor), `inputs` (câu chuẩn hoá, Intent, note gate/invariant/abstain) và `output` (`pipeline.trace_of`). Khi có LLM, `thinking` là reasoning gốc, gọi nhiều lần thì là list. Lỗi thì ghi traceback vào `error`.
+  - Image rule-only `python:3.11-slim`, deps pin đúng bản `.venv` (`docker/requirements.txt`), kèm code. `/code/training_code/` chứa code train, train data, docs và `data_manifest.json` (SHA-256 từng file, `docker/make_manifest.py`).
+- **Lý do:** có image dự phòng chạy được sớm (mốc 12/11), độc lập với phần LLM. Pin phiên bản để lần chạy lại của BTC lệch ≤ 0.03.
+- **Hệ quả:**
+  - Đường dẫn log đã chốt theo Guide §3.3 (`/result/logs/`). Nếu cần đổi thì chỉ sửa cờ `--log` trong `predict.sh`.
+  - `elapsed_ms` của câu đầu mỗi shop gồm cả thời gian ingest.
+  - Image LLM sẽ đổi base sang CUDA ≥ 12.8 + vLLM, giữ nguyên layout `/code`.
+
 ### D11 — Giới hạn dùng public; ingest tự kiểm tra, không chạy theo lỗi từng shop public (2026-11-05)
 - **Bối cảnh:** sau public v0.4 vẫn còn 107 câu abstain do không nhận ra bảng đơn (2 shop). Proxy synth đã sạch (6 transform đều 24/24) nhưng không tái hiện được kiểu dữ liệu của 2 shop này. BTC xác nhận được xem cấu trúc dữ liệu public để cải thiện bộ đọc (`SPEC.md` §7 câu 4). Rủi ro còn lại là overfit: sửa cho đúng 14 shop public trong khi private là shop mới. Các câu abstain đó vẫn an toàn (được 0 điểm). Mối nguy thật là câu ingest đọc sai mà vẫn trả lời (bị −1).
 - **Lựa chọn:**

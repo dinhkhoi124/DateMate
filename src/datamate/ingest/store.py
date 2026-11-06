@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from datamate.config import cache_root
 from datamate.ingest.readme import ReadmeSpec, parse_readme
 from datamate.ingest.reader import read_shop
 from datamate.ingest.tables import Table, build_table
@@ -25,7 +26,8 @@ from datamate.ingest.values import (
 )
 
 STORE_VERSION = "s2"
-CACHE_DIR = Path(__file__).resolve().parents[3] / "cache" / "store"
+def _cache_dir() -> Path:
+    return cache_root() / "store"
 
 SUMMARY_ROW = r"^(tong|cong|total|sub ?total|sum)( (ngay|thang|tuan|nam|quy|ky|cong|so|tien|doanh thu)\b|\s*$|\s*[:\d])"
 
@@ -679,7 +681,7 @@ def _cache_path(shop_dir: Path) -> Path | None:
             st = p.stat()
             sig.append(f"{p.name}|{st.st_size}|{st.st_mtime_ns}")
         h = hashlib.md5(("|".join(sig) + STORE_VERSION + _code_sig()).encode()).hexdigest()[:16]
-        return CACHE_DIR / f"{shop_dir.name}_{h}.pkl"
+        return _cache_dir() / f"{shop_dir.name}_{h}.pkl"
     except OSError:
         return None
 

@@ -58,13 +58,15 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
    - [x] Bất biến lúc chạy (D11, `ingest/checks.py`, ngưỡng `config.Invariants`): vi phạm gắn vùng dữ liệu, op chạm vùng đó thì abstain. Đo bằng `eval/synth/faults.py` (6 lỗi giả lập × 24 shop): ok→wrong 7345 → **0**, shop sạch không đổi; dev 0.985, holdout 0.859 không đổi. Public v0.5: 2/14 shop `status_unrecognized` → 100 câu thành abstain
    - [x] Từ vựng trạng thái tổng quát + transform `status_words` (nhãn phần mềm khác + nhiễu hoa/thường/bỏ dấu; có nhãn mơ hồ 'Chuyển hoàn' phải abstain). Trước: 24/24 shop bị chặn (0 sai). Sau: ingest 22/24, PA 0.985 → 0.900, **0 sai**; 2 shop còn lại là nhãn mơ hồ, abstain đúng thiết kế. Public v0.6: vẫn 2 shop `status_unrecognized` (không đọc giá trị ô, D11)
    - [ ] (giữ nguyên, có lý do) `status_unrecognized` chặn cả vùng khi có giá trị lạ: chấm exact match, một đơn huỷ đọc thành hoàn thành đã làm sai số đếm/doanh thu; nới theo tỉ lệ sẽ sinh câu sai
-   - [ ] Docker: cache Store/raw phải ghi vào /tmp (SPEC §7 câu 2); log bắt buộc id/answer/elapsed_ms/thinking (SPEC §7 câu 3)
+   - [x] Docker: cache Store/raw ghi vào `$DATAMATE_CACHE` (`config.cache_root()`, `predict.sh` đặt `/tmp/datamate_cache`; SPEC §7 câu 2); log `/result/logs/log.jsonl` mỗi câu {id, answer, elapsed_ms, thinking=null, code, inputs, output} stream cùng submission (SPEC §7 câu 3, D12). Dev không đổi (2410/0)
    - [x] Sinh lại public (`eval/runs/public_v0.4`, 57d2d2f): vẫn **107 câu** abstain do không có bảng đơn, cùng 2 shop như v0.2/v0.3 (số 214 cũ đếm trùng). Loại câu trả lời y hệt v0.3 (abstain 690), 21 câu đổi giá trị. Các sửa ingest từ proxy chưa chạm tới 2 shop này
    - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
 3. - [ ] Luật đọc từ rulebook lúc chạy (xác minh D03 trên forum trước)
 4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ
 5. - [ ] Code-gen fallback để cuối
-- [ ] Song song: Dockerfile bản rule-only trước 10/11 (dự phòng)
+- [x] Song song: Dockerfile bản rule-only trước 10/11 (dự phòng)
+   - [x] `docker/Dockerfile` (python:3.11-slim, deps pin `docker/requirements.txt`), `docker/predict.sh` → `/code/predict.sh`, `/code/training_code/data_manifest.json` (`docker/make_manifest.py`), `.dockerignore`. Image chứa code + `data/train/train`. 06/11: 142 test pass; giả lập `predict.sh` local (`DATAMATE_CACHE` → thư mục tạm) ghi đúng submission + `logs/log.jsonl`, cache không rơi vào repo
+   - [x] Build + chạy thử `--network none --shm-size=16g -v <split>:/data:ro -v <out>:/result` (06/11, sau khi sửa PATH WSL): image 1.08GB, train 3000 câu trong 386s (CPU, gồm ingest nguội), submission container **giống hệt local 3000/3000**, `submit_check` PASS, log 3000 dòng. Chưa chạy với `--gpus` (máy không có GPU NVIDIA)
 
 **08–10/11 — LLM** (cần GPU)
 - [ ] Chốt model ≤ 15B, ghi vào `DECISIONS.md`

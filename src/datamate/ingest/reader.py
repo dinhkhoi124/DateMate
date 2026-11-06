@@ -16,10 +16,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from datamate.config import cache_root
 from datamate.ingest.readme import SHEET_SEP, ReadmeSpec
 from datamate.ingest.vocab import NAME_SYNONYMS, squash
 
-CACHE_DIR = Path(__file__).resolve().parents[3] / "cache" / "raw"
+def _cache_dir() -> Path:
+    return cache_root() / "raw"
 
 
 @dataclass
@@ -101,7 +103,7 @@ def _doc_for(spec: ReadmeSpec, *keys: str) -> dict[str, str]:
 def _cache_key(path: Path) -> Path:
     st = path.stat()
     h = hashlib.md5(f"{path.resolve()}|{st.st_size}|{st.st_mtime_ns}|v4".encode()).hexdigest()[:16]
-    return CACHE_DIR / f"{path.stem}_{h}.pkl"
+    return _cache_dir() / f"{path.stem}_{h}.pkl"
 
 
 def _read_excel_all(path: Path) -> dict[str, pd.DataFrame]:
@@ -114,7 +116,7 @@ def _read_excel_all(path: Path) -> dict[str, pd.DataFrame]:
     except Exception:
         sheets = pd.read_excel(path, sheet_name=None, header=None, dtype=object, engine="openpyxl")
     try:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _cache_dir().mkdir(parents=True, exist_ok=True)
         with open(ck, "wb") as f:
             pickle.dump(sheets, f, protocol=pickle.HIGHEST_PROTOCOL)
     except OSError:  # read-only FS in Docker: just skip cache
