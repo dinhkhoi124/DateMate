@@ -1,9 +1,13 @@
 from datetime import date
+from pathlib import Path
+
+import pytest
 
 from datamate.normalize.text import normalize
 from datamate.timeparse.periods import (LunarCalendar, find_periods, previous_period, tet_period)
 
-CAL = LunarCalendar.load("data/train/train/calendar.csv")
+CAL_PATH = Path("data/train/train/calendar.csv")
+CAL = LunarCalendar.load(str(CAL_PATH))  # empty calendar when data is missing
 T = date(2026, 6, 24)  # Wednesday
 
 
@@ -61,6 +65,7 @@ def test_asof():
     assert P("tồn kho X cuối ngày hôm nay") == [("asof", "2026-06-24", "2026-06-24")]
 
 
+@pytest.mark.skipif(not CAL_PATH.exists(), reason="train data not available (calendar.csv)")
 def test_tet_rulebook_s2():
     # Tết 2026: 23 tháng Chạp Ất Tỵ .. mùng 10 tháng Giêng Bính Ngọ
     p = tet_period(2026, CAL)
