@@ -1,6 +1,6 @@
 # GPU RUNBOOK — Chạy LLM parser trên máy GPU của thành viên
 
-Người chạy: thành viên có GPU NVIDIA. Người nhận kết quả: lead (Khôi). Quyết định liên quan: `DECISIONS.md` D14, D15.
+Người chạy: thành viên có GPU NVIDIA. Người nhận kết quả: lead (Khôi). Quyết định liên quan: `DECISIONS.md` D14, D15, D17 (pin vLLM).
 Thời gian dự kiến: **3–6 giờ máy chạy** cho cả 8B và 14B (model gọi từng câu, ~4000 câu mỗi model, 14B chiếm phần lớn),
 ~30 phút thao tác. Nên bắt đầu buổi tối hoặc chạy qua đêm. Hạn: **10/11** (để kịp calibrate và đóng image trước 12/11).
 
@@ -54,7 +54,7 @@ rồi chạy `wsl --shutdown` trong PowerShell và mở lại Ubuntu. Kiểm tra
 |---|---|---|---|
 | ≥ 40 GB 1 card (A6000, L40S, A100) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B` | – |
 | 2 card × 24 GB trở lên (vd 2× 5090, giống máy chấm) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B` | `DATAMATE_LLM_TP=2` khi chạy 14B |
-| 32 GB 1 card (RTX 5090) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B-FP8` | – (14B BF16 ~29.5 GB, không vừa 1 card) |
+| 32 GB 1 card (RTX 5090) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B-FP8` | – (14B BF16 ~29.5 GB, không vừa 1 card). FP8 lỗi kernel thì dùng `-AWQ` + float16 |
 | 24 GB (3090, 4090) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B-AWQ` | `DATAMATE_LLM_DTYPE=float16` khi chạy bản AWQ |
 | 16 GB (4060 Ti 16G, 4080) | `Qwen/Qwen3-8B-AWQ` | `Qwen/Qwen3-14B-AWQ` | `DATAMATE_LLM_DTYPE=float16` |
 | < 16 GB, hoặc card trước dòng RTX 30 | báo lead, không chạy | | |
@@ -72,7 +72,7 @@ git checkout feat/llm-parser          # nhánh lead báo; sau khi merge thì dù
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -U pip
 pip install -r docker/requirements.txt   # pandas/numpy… đúng bản máy lead: few-shot sinh ra phải giống hệt
-pip install -e ".[dev,llm]"           # cài vLLM bản mới nhất, kéo theo torch đúng CUDA
+pip install -e ".[dev,llm]"           # vLLM 0.10.1.1 (pin, D17) + torch 2.7.1 CUDA 12.8
 pip freeze | grep -iE '^(pandas|numpy|openpyxl|python-calamine|duckdb|pyarrow)=='
 pre-commit install                    # chặn commit nhầm dữ liệu
 ```
@@ -81,7 +81,10 @@ So dòng `pip freeze` với `docker/requirements.txt`. Nếu vLLM kéo bản num
 nhau), **gửi lead output của pip**, đừng tự ép phiên bản. Bước kiểm sha256 few-shot bên dưới sẽ cho biết có lệch thật không.
 
 Không có `python3.11`: `sudo apt install python3.11 python3.11-venv` (Ubuntu 24.04 cần PPA deadsnakes).
-Phiên bản vLLM bạn cài sẽ thành bản **pin** cho image nộp bài, nên script tự ghi lại; đừng nâng cấp giữa chừng.
+vLLM được pin **0.10.1.1**, trùng base image BTC khuyến nghị, để replay khớp với image nộp bài (D17). **Không nâng
+cấp vLLM, torch hay numpy**, kể cả khi pip gợi ý. Driver NVIDIA phải hỗ trợ CUDA 12.8 (`nvidia-smi` góc phải trên ghi
+`CUDA Version: 12.8` trở lên, tức driver ≥ 570). Thấp hơn thì cập nhật driver trên Windows trước.
+Bản này dùng API `GuidedDecodingParams`; smoke test ghi `structured_api` để xác nhận.
 
 **Dữ liệu:** lấy từ Drive nhóm (cùng bộ lead đang dùng), giải nén để có đúng cấu trúc:
 

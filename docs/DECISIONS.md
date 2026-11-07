@@ -4,6 +4,27 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D17 — Pin vLLM 0.10.1.1 (base Docker Guide) và numpy 2.2.6 (2026-11-07)
+- **Bối cảnh:**
+  - D16 yêu cầu bản vLLM của máy GPU thành viên khớp base image `vllm/vllm-openai:v0.10.1.1`. Runbook cũ để
+    `pip install vllm` lấy bản mới nhất, hiện là 0.33.0. Image dựng từ bản đó có thể cần CUDA mới hơn driver máy chấm,
+    trong khi BTC chỉ cam kết CUDA ≥ 12.8.
+  - vllm 0.10.1.1 pin `torch==2.7.1` (cu128) và `numba==0.61.2`. numba bản này cần `numpy<2.3`, còn
+    `docker/requirements.txt` đang pin `numpy==2.4.6`: xung đột thật, cả trong image lẫn trên máy thành viên.
+- **Lựa chọn:**
+  - Extra `llm` pin `vllm==0.10.1.1`. Runbook cấm nâng cấp vLLM, torch, numpy.
+  - Hạ `numpy` về 2.2.6 cho cả `.venv` dev, `docker/requirements.txt` và image rule-only.
+- **Lý do:**
+  - Base được BTC thử trên 5090 giảm rủi ro phần cứng. Replay ghi trên đúng bản vLLM của image thì calibrate mới có
+    nghĩa (D14).
+  - Đo trên CPU: numpy 2.2.6 cho submission dev 2447/2447 và holdout 553/553 giống hệt từng byte, 155 test pass,
+    few-shot sha256 không đổi (`072b2861…`). pandas 3.1.0 nhận numpy ≥ 2.0.2.
+- **Hệ quả:**
+  - API ép JSON của bản này là `GuidedDecodingParams` (code đã có nhánh fallback). Smoke test ghi lại API đang dùng.
+  - Kernel FP8 cho 14B trên 5090 (sm120) ở 0.10.1.1 chưa được kiểm. Nếu lỗi thì dùng TP=2 BF16 (máy chấm có 2 card)
+    hoặc AWQ.
+  - Image vLLM dùng Python 3.12, `.venv` dev dùng 3.11. Phải so container với local như đã làm với bản rule-only.
+
 ### D16 — Public là thước đo khả thi; đọc rulebook lúc chạy lên đầu; giữ GPU cho vòng private (2026-11-07)
 - **Bối cảnh:**
   - Từ 04/11 chưa nộp public lần nào (D11: tối đa 1 lần mỗi milestone). Proxy synth đạt 0.985 nhưng public chỉ 0.076: proxy chỉ biến đổi shop dev, không có ngành mới hay luật mới, nên không đo được rủi ro chính.
