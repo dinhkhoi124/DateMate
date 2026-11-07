@@ -74,7 +74,8 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
 - [x] (07/11) Quy trình GPU qua máy thành viên (D15): `docs/GPU_RUNBOOK.md`, `scripts/gpu/run_all.sh`, `eval/gpu_smoke.py`, chế độ ghi `DATAMATE_LLM_CALL_ALL`. Chặn lộ dữ liệu: gitignore/pre-commit/CI chặn mọi `.jsonl`, hook `eval/check_leak.py`, viết lại 5 câu test trùng train. Rà runbook lần 2: dòng 5090/FP8, AWQ fp16, RAM WSL, pin deps, đếm lỗi model trong summary
 - [ ] Thành viên GPU chạy runbook (hạn 10/11): smoke + dev + holdout + public cho Qwen3-8B và 14B, bundle lên Drive, PR `docs/gpu_runs/`. Kiểm tra guided JSON trên bản vLLM đó, bản đó thành bản pin
 - [ ] (CPU) Chốt model ≤ 15B từ replay: độ khớp signature với rule trên dev, thời gian/câu, VRAM; ghi `DECISIONS.md`. 14B BF16 cần TP=2 hoặc FP8 trên 5090 (D15)
-- [ ] (CPU) Thêm cờ `--llm` cho `eval/synth/run.py`, đo proxy synth bằng replay dev
+- [x] (CPU, 07/11) Thêm cờ `--llm/--llm-model/--llm-replay` cho `eval/synth/run.py` (câu synth = câu dev nên replay dev dùng được; in `llm_calls/llm_failed` = replay miss). Replay rỗng: rename 2 shop giống hệt rule-only
+- [ ] (CPU, khi có replay) Đo proxy synth bằng replay dev: `eval/synth/run.py --llm replay --llm-model models/<M> --llm-replay <dev replay>`
 - [ ] Calibrate ensemble trên replay (CPU): `rescue_gate` (mặc định bật), `require_agreement`, `llm_only` + `n_samples`. **Mục tiêu PA holdout ≥ 0.85, precision ≥ 97%**
 - [ ] Image LLM: base CUDA ≥ 12.8 + vLLM pin, weights trong image, so container với local như bản rule-only
 

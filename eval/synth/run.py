@@ -5,6 +5,8 @@ PYTHONPATH=src .venv/Scripts/python eval/synth/run.py [--transforms rename nodoc
 - ingest: fingerprint of the Store built from the synthetic shop vs the one built from the original (counts, money,
   monthly revenue, statuses, capabilities). A mismatch means the data was read differently - no parser can fix it.
 - e2e: the shop's dev questions on the synthetic shop vs on the original (production config, gate on).
+  `--llm replay --llm-model <dir> --llm-replay <dev replay jsonl>` adds the LLM parser + ensemble (D14): synthetic
+  shops keep the dev question text, so a dev replay recorded on the GPU machine (D15) covers them on CPU.
 Dev shops only (CLAUDE.md rule 2). Writes eval/runs/<ts>_synth/report.json.
 """
 from __future__ import annotations
@@ -26,6 +28,7 @@ import numpy as np  # noqa: E402
 from datamate.execute.facts import facts_of  # noqa: E402
 from datamate.ingest.store import Store  # noqa: E402
 from datamate.pipeline import Context, answer  # noqa: E402
+from datamate.run import make_llm  # noqa: E402
 from eval.scorer import load_jsonl, score  # noqa: E402
 from eval.synth.make import TRAIN, TRANSFORMS, make  # noqa: E402
 
@@ -84,6 +87,9 @@ def main():
     ap.add_argument("--shops", nargs="*")
     ap.add_argument("--no-e2e", action="store_true")
     ap.add_argument("--verbose", action="store_true", help="print per-shop ingest diffs")
+    ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
+    ap.add_argument("--llm-model", help="weights dir; its name is the replay key (default: $DATAMATE_LLM_MODEL)")
+    ap.add_argument("--llm-replay", help="replay/record jsonl (default: $DATAMATE_LLM_REPLAY)")
     args = ap.parse_args()
 
     holdout = set(json.loads((ROOT / "eval" / "splits.json").read_text(encoding="utf8"))["holdout"])
@@ -94,9 +100,10 @@ def main():
     golds = {g["id"]: g for g in load_jsonl(TRAIN / "answers.jsonl")}
 
     base_fp = {b: fingerprint(Store.build(TRAIN / "data" / b)) for b in shops}
+    llm = None if args.no_e2e else make_llm(args.llm, args.llm_model, args.llm_replay)
     base_s = {}
     if not args.no_e2e:
-        ctx = Context(root=TRAIN)
+        ctx = Context(root=TRAIN, llm=llm)
         for q in qs:
             try:
                 base_s[q["id"]] = score(answer(q, ctx), golds[q["id"]])
@@ -125,7 +132,7 @@ def main():
             bad_fields.update(d.split(" ")[0] if d.startswith("ERROR") else d for d in diff)
         trans = Counter()
         if not args.no_e2e:
-            ctx = Context(root=root)
+            ctx = Context(root=root, llm=llm)
             for q in qs:
                 try:
                     s = score(answer(q, ctx), golds[q["id"]])
@@ -144,6 +151,9 @@ def main():
               f"{trans[(1, -1)]:10}{trans[(1, 0)]:9}{trans[(1, 1)]:8}   top bad: {', '.join(k for k, _ in bad_fields.most_common(4))}",
               flush=True)
 
+    if llm is not None:
+        report["llm"] = {"model_id": llm.cfg.model_id, "calls": llm.calls, "failed": llm.failed}
+        print(llm.stats_line() + ("   (failed = replay misses: question not in the replay)" if llm.failed else ""))
     run_dir = ROOT / "eval" / "runs" / f"{time.strftime('%Y%m%d_%H%M%S')}_synth"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1, default=str), encoding="utf8")
