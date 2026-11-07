@@ -4,6 +4,35 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D16 — Public là thước đo khả thi; đọc rulebook lúc chạy lên đầu; giữ GPU cho vòng private (2026-11-07)
+- **Bối cảnh:**
+  - Từ 04/11 chưa nộp public lần nào (D11: tối đa 1 lần mỗi milestone). Proxy synth đạt 0.985 nhưng public chỉ 0.076: proxy chỉ biến đổi shop dev, không có ngành mới hay luật mới, nên không đo được rủi ro chính.
+  - Đối chiếu portal ngày 07/11:
+    - Rule 6 cấm *"collect answers to test questions by any means"*.
+    - Mục Data yêu cầu agent dùng rulebook của đúng split đang trả lời, không dùng bản copy từ train.
+    - Vòng private: **đội tự chạy** bản đã đóng băng (20/11 09:00 → 23/11), điểm cuối là điểm BTC chạy lại.
+    - Image nộp bằng link Google Drive public kèm checksum.
+    - Rule 5: agent được kỳ vọng sinh và chạy code.
+- **Lựa chọn:**
+  1. **Public là thước đo khả thi chính, cùng với proxy.** Mỗi milestone nộp đúng **phiên bản hệ thống hoàn chỉnh**, tối đa khoảng 2 lượt mỗi ngày, chọn loại model "<=15B", ghi vào `EXPERIMENTS.md`. Thay phần giới hạn tần suất của D11. Phần còn lại của D11 giữ nguyên: không sửa theo từng shop, không đọc câu hỏi hay giá trị ô.
+  2. **Không thiết kế bài nộp để dò nhãn:** không nộp hai bản chỉ khác nhau ở một nhóm câu nhỏ (ví dụ tắt bất biến trên 2 shop), không chọn op hay shop theo điểm public. Theo Rule 6, những việc đó gần với thu thập đáp án.
+  3. **Đọc rulebook lúc chạy đứng ngang LLM, làm trước phần calibrate LLM.** Tham số luật (ca, đầu tuần, Tết, định nghĩa) đọc từ `/data/rulebook.md`, mặc định lấy từ train khi không đọc được. Kiểm thử bằng rulebook tổng hợp tự đổi tham số trên shop dev. **Không xem rulebook public để định hướng code** (SPEC §7.1).
+  4. **Mục tiêu precision public ước tính ≥ 90%** trước khi mở rộng độ phủ. Bản nộp nào làm precision giảm thì không nhận.
+  5. **Hậu cần vòng private:**
+     - Giữ GPU cho 20–23/11.
+     - Chạy thử toàn bộ quy trình chạy private trước 16/11.
+     - Chuẩn bị link Drive public cho image kèm checksum.
+     - README bài nộp có khai báo model.
+- **Lý do:**
+  - Public cùng format với private và có ngành, luật lạ, nên là tín hiệu tốt nhất hiện có. Portal ghi rõ điểm public để tham khảo trong lúc phát triển.
+  - Đọc rulebook là yêu cầu của đề. Private chắc chắn có rulebook riêng, và tham số đặt cứng từ train là nghi phạm hàng đầu của các câu sai trên public.
+  - Thiếu GPU trong 20–23/11 thì không có submission private, và không được BTC chạy lại.
+- **Hệ quả:**
+  - Ngay bây giờ: nộp baseline v0.6 rule-only.
+  - Thêm mốc go/no-go 11/11 theo PA public (ngưỡng chốt sau khi có baseline).
+  - Ngân sách khoảng 40 giây/câu (500 câu trong 6 giờ) đủ cho agent nhiều bước hoặc code-gen. Code-gen chỉ làm khi đọc rulebook và LLM parser đã xong.
+  - Docker Guide khuyến nghị base `vllm/vllm-openai:v0.10.1.1`. Bản vLLM pin từ máy GPU thành viên (D15) phải khớp base này, hoặc chứng minh chạy được trên 5090.
+
 ### D15 — Chạy GPU trên máy thành viên, dữ liệu thi đi qua Drive, repo chỉ nhận code và số liệu (2026-11-07)
 - **Bối cảnh:** máy lead không có GPU. Một thành viên có GPU NVIDIA. Repo GitHub public. Rà soát cho thấy ngoài
   `data/` còn nhiều đường lộ khác: few-shot (nguyên văn câu train), replay LLM (đầu ra model có mention chép từ câu hỏi
@@ -89,7 +118,7 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   - `elapsed_ms` của câu đầu mỗi shop gồm cả thời gian ingest.
   - Image LLM sẽ đổi base sang CUDA ≥ 12.8 + vLLM, giữ nguyên layout `/code`.
 
-### D11 — Giới hạn dùng public; ingest tự kiểm tra, không chạy theo lỗi từng shop public (2026-11-05)
+### D11 — Giới hạn dùng public; ingest tự kiểm tra, không chạy theo lỗi từng shop public (2026-11-05) — mục 3 (tần suất nộp) Superseded by D16
 - **Bối cảnh:** sau public v0.4 vẫn còn 107 câu abstain do không nhận ra bảng đơn (2 shop). Proxy synth đã sạch (6 transform đều 24/24) nhưng không tái hiện được kiểu dữ liệu của 2 shop này. BTC xác nhận được xem cấu trúc dữ liệu public để cải thiện bộ đọc (`SPEC.md` §7 câu 4). Rủi ro còn lại là overfit: sửa cho đúng 14 shop public trong khi private là shop mới. Các câu abstain đó vẫn an toàn (được 0 điểm). Mối nguy thật là câu ingest đọc sai mà vẫn trả lời (bị −1).
 - **Lựa chọn:**
   1. Không tối ưu theo từng lỗi public. Được xem cấu trúc public (tên file, sheet, header, README), nhưng chỉ để rút ra **kiểu dữ liệu**, không phải bản sửa cho một shop. Không đọc giá trị ô hay câu hỏi để viết luật (luật 1 vẫn giữ). Ghi lại mỗi lần xem: shop nào, xem gì.

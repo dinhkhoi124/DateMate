@@ -1,7 +1,7 @@
 # SPEC — DataMate (Zalo AI Challenge 2026)
 
 > Nguồn: `thele/rule-game.md` (thể lệ), `data/*/rulebook.md` (luật nghiệp vụ). Mục nào chưa xác minh trên forum/portal thì đánh dấu ❓.
-> Cập nhật lần cuối: 2026-11-04
+> Cập nhật lần cuối: 2026-11-07, đối chiếu portal `challenge.zalo.ai/portal/datamate` (Overview: Description, Evaluation, Rule, Submission Guidance; tab Data cần đăng nhập, chưa đối chiếu lại).
 
 ## 1. Bài toán
 
@@ -36,7 +36,8 @@ Mỗi split có:
 
 - Trả `unanswerable` được chấm đúng/sai như một đáp án, **không phải abstain**.
 - Chấm bằng exact typed match, không dùng LLM-judge. Chỉ nên trả lời khi P(đúng) > 0.5, vì kỳ vọng điểm là 2p − 1.
-- Mốc tham khảo: baseline trả lời 41/1000 câu đạt 0.019. **≥ 17 đội đạt PA = 1.0 trên public**, nên public đã bão hoà và thứ hạng nằm ở private.
+- Mốc tham khảo: baseline trả lời 41/1000 câu đạt 0.019. **≥ 17 đội đạt PA = 1.0 trên public** (hạng SLM, nhiều đội từ 02/11). Loại model trên leaderboard do đội tự khai và public không được kiểm chứng (portal có disclaimer), nên con số này chỉ cho biết public giải trọn được, không cho biết cách làm. Thứ hạng thật nằm ở private.
+- Hoà điểm: xét tổng thời gian inference khi BTC chạy lại, rồi tới bài nộp sớm hơn.
 
 ### Format đáp án (rulebook §9)
 
@@ -68,11 +69,12 @@ Mỗi dòng submission: `{"id": "...", "type": "...", "answer": ...}`.
 | Hạng mục       | Ràng buộc                                                                                         |
 | -------------- | ------------------------------------------------------------------------------------------------- |
 | Model          | Tổng ≤ 15B tham số, tính cả model phụ (embedding, reranker). MoE tính tổng tham số. Được quantize |
-| Weights        | Public trước 01/10/2026, license hợp lệ                                                           |
+| Weights        | Public trước **26/10/2026**, license cho phép dùng, được fine-tune. Phải khai báo model trong README bài nộp (Rule 2) |
 | Phần cứng chấm | 2× RTX 5090 32GB, 512GB RAM, CUDA ≥ 12.8                                                          |
 | Thời gian      | Private run ≤ 6 giờ, tính cả load model                                                           |
 | Mạng           | Offline hoàn toàn (`--network none`)                                                              |
-| Cấm            | Human-in-the-loop, hardcode đáp án theo ID, train hoặc tune trên public/private test              |
+| Cấm            | Human-in-the-loop; hardcode đáp án hoặc logic theo id câu/business (Rule 4); dùng public/private test để train, **thu thập đáp án câu test bằng bất kỳ cách nào** (Rule 6) |
+| Chạy code      | Agent được sinh và chạy code trong container: "expected but not required" (Rule 5). `/data` read-only, file tạm ghi chỗ khác |
 | Được dùng      | Tập train, dữ liệu tự sinh, tài nguyên public hợp lệ                                              |
 | Code           | Phải public qua forum chính thức (quy định 8.2)                                                   |
 
@@ -80,11 +82,14 @@ Mỗi dòng submission: `{"id": "...", "type": "...", "answer": ...}`.
 
 ## 5. Nộp bài
 
-- **Public:** nộp file `submission.jsonl`, tối đa 5 lần/ngày.
-- **Private:** nộp Docker image, tối đa 2 lần, chỉ tính lần cuối.
+- **Public (26/10 → 16/11):** nộp file `submission.jsonl`, tối đa 5 lần/ngày. Điểm chỉ để tham khảo trong lúc phát triển. Bảng xếp hạng chỉ tính cột SLM; chọn loại model **"Based on small models (<=15B)"** khi nộp.
+- **Nộp giải pháp (hạn 16/11 23:59):** gói Docker gồm code train, code inference và dữ liệu, gửi qua form **"Solution Submission"** trên portal bằng **link Google Drive public kèm checksum**. Tối đa 2 lần, BTC chỉ xét lần cuối.
+- **Vòng private (20/11 09:00 → 23/11 23:59): đội tự chạy bản đã đóng băng trên tập private** rồi upload `submission.jsonl`. File upload chỉ quyết định bảng tạm và đội nào được chạy lại. **Điểm cuối là điểm BTC chạy lại image** (Rule 8). Cần có GPU trong 4 ngày này.
+- **Yêu cầu với image** (chi tiết ở mục Submission contract bên dưới):
   - Container đọc `/data` (read-only) và ghi `/result/submission.jsonl` theo kiểu **stream từng câu**.
   - BTC chạy lại image; điểm chạy lại chỉ được lệch **≤ 0.03** so với điểm bạn upload.
-  - ❓ Cấu trúc `/data` lúc chấm: giả định giống thư mục split (`questions.jsonl`, `rulebook.md`, `calendar.csv`, `data/<biz>/`). Cần xác minh.
+  - Cấu trúc `/data` lúc chấm: giống thư mục split, đã xác minh theo Docker Guide §3.1 (xem §7 câu 2).
+  - Lệch quá 0.03: BTC xem log trong image, có thể chạy thêm lần nữa và hỏi đội. Không giải thích được thì loại. Chạy quá 6 giờ thì chỉ chấm các câu đã ghi, phần còn lại tính là abstain.
 
 ## 6. Timeline (GMT+7)
 
@@ -92,8 +97,9 @@ Mỗi dòng submission: `{"id": "...", "type": "...", "answer": ...}`.
 | -------------------- | --------------------------------------------------- |
 | Khởi tranh           | 26/10/2026                                          |
 | **Docker freeze**    | **16/11, 23:59**                                    |
-| Private test release | 20/11 (09:00 hoặc 11:00, nguồn ghi chưa thống nhất) |
-| Kết quả private      | 23/11, 23:59                                        |
+| Private test release | 20/11, 09:00 (Submission Guidance)                  |
+| Hạn upload private   | 23/11, 23:59 (đội tự chạy, upload submission)       |
+| Công bố top 2        | 02/12                                               |
 
 ## 7. Câu hỏi mở ❓
 
