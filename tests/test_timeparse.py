@@ -16,8 +16,8 @@ def P(q, as_of=T):
 
 
 def test_basic_days():
-    assert P("Doanh thu hôm nay là bao nhiêu?") == [("day", "2026-06-24", "2026-06-24")]
-    assert P("Cho tôi biết dthu hqua") == [("day", "2026-06-23", "2026-06-23")]
+    assert P("Doanh thu hôm nay được bao nhiêu?") == [("day", "2026-06-24", "2026-06-24")]
+    assert P("xem giúp dthu hqua") == [("day", "2026-06-23", "2026-06-23")]
 
 
 def test_week_rulebook_s2():

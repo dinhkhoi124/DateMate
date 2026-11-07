@@ -24,3 +24,10 @@ Thumbs.db
 analysis/out/
 cache/
 eval/synth/out/
+
+# D14/D15: competition text stays off GitHub (repo is public).
+# few-shot = verbatim train questions (regenerate: analysis/build_fewshot.py); replay = model outputs on competition
+# questions (exchanged via the team Drive, docs/GPU_RUNBOOK.md). Any .jsonl is data, never code.
+src/datamate/parse/fewshot.jsonl
+*.jsonl
+*.tgz

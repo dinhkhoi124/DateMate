@@ -15,6 +15,8 @@ class Intent:
     atype: str = "number"
     confidence: float = 1.0
     note: str = ""
+    source: str = "rule"                      # rule | rule+llm | llm (parse/ensemble.py)
+    llm_raw: list | None = None               # raw model outputs, logged as `thinking` (D12)
 
     def key(self) -> tuple:
         """Comparable signature (for rule/LLM agreement)."""

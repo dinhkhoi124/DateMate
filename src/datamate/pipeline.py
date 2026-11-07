@@ -14,6 +14,7 @@ from datamate.ingest.checks import blocking, metrics, violations
 from datamate.ingest.store import Store
 from datamate.link.catalog import linker_of
 from datamate.normalize.text import normalize, normalize_pair
+from datamate.parse.ensemble import decide, needs_llm
 from datamate.parse.gate import load_vocab, residual, unknown
 from datamate.parse.rules import RuleParser
 from datamate.timeparse.periods import LunarCalendar, find_periods
@@ -31,6 +32,7 @@ class Context:
     checks: bool = True                               # D11 run-time ingest invariants; off only to measure them
     vocab: frozenset = None
     trace: dict = None                                # id -> residual words, filled when not None
+    llm: object = None                                # parse.llm.LLMParser (D14); None = rule-only
 
     def __post_init__(self):
         if self.vocab is None:
@@ -80,12 +82,26 @@ def analyse(q: dict, ctx: Context):
     words = residual(t, pre, lk, periods)
     if ctx.trace is not None:
         ctx.trace[q["id"]] = words
-    if it is None:
-        return None, t, abstain(q["id"])
-    unk = unknown(words, ctx.vocab) if ctx.gate else []
-    if unk:
-        it.note = "gate: " + " ".join(unk)
-        return it, t, abstain(q["id"])
+    unk = unknown(words, ctx.vocab) if ctx.gate and it is not None else []
+    llm_its = raw = None
+    if ctx.llm is not None and needs_llm(it, not unk, ctx.llm.cfg):
+        llm_its, raw = ctx.llm.parse(q["question"], periods, lk)
+    if ctx.llm is not None:
+        d = decide(it, not unk, llm_its, ctx.llm.cfg)
+        shown = d.intent or it or next((i for i in llm_its or [] if i is not None), None)
+        if shown is not None:
+            shown.llm_raw, shown.source = raw, d.source
+            if d.note:
+                shown.note = d.note + (": " + " ".join(unk) if unk and d.intent is None else "")
+        if d.intent is None:
+            return shown, t, abstain(q["id"])
+        it = d.intent
+    else:
+        if it is None:
+            return None, t, abstain(q["id"])
+        if unk:
+            it.note = "gate: " + " ".join(unk)
+            return it, t, abstain(q["id"])
     if ctx.checks:
         bad = blocking(it.op, ctx.violations(q["business_id"]))
         if bad:   # D11: the data this op reads failed a run-time invariant -> not enough evidence to answer
@@ -103,16 +119,16 @@ def analyse(q: dict, ctx: Context):
 
 def trace_of(t: str, it, row: dict) -> dict:
     """Log fields besides id/answer/elapsed_ms (SPEC submission contract, Guide §3.3).
-    thinking: model reasoning, None when no model ran (rule parser). The executor is a pre-written function, so the
-    contract asks for code (which function), inputs and output."""
+    thinking: raw model outputs (list, one per sample) when the LLM parser ran, else None (rule parser). The executor
+    is a pre-written function, so the contract asks for code (which function), inputs and output."""
     inputs = {"normalized_question": t}
     if it is not None:
-        inputs.update(op=it.op, atype=it.atype, filters=it.flt, args=it.args,
+        inputs.update(op=it.op, atype=it.atype, filters=it.flt, args=it.args, source=it.source,
                       periods=[{"label": p.label, "kind": p.kind, "start": p.start.isoformat(),
                                 "end": p.end.isoformat()} for p in it.periods])
         if it.note:
             inputs["note"] = it.note
-    return {"thinking": None,
+    return {"thinking": it.llm_raw if it is not None else None,
             "code": f"datamate.execute.dispatch.run(op={it.op!r})" if it is not None else None,
             "inputs": inputs,
             "output": {k: v for k, v in row.items() if k != "id"}}

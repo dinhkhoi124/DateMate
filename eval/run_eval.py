@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-from datamate.pipeline import Context, abstain, answer  # noqa: E402
+from datamate.pipeline import Context, abstain, answer_traced  # noqa: E402
+from datamate.run import make_llm  # noqa: E402
 from eval.scorer import evaluate, load_jsonl, score  # noqa: E402
 
 TRAIN = ROOT / "data" / "train" / "train"
@@ -33,9 +34,12 @@ def intent_of(question: str) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="dev", choices=["dev", "holdout", "all"])
-    ap.add_argument("--by", default="intent", choices=["intent", "shop", "type"])
+    ap.add_argument("--by", default="intent", choices=["intent", "shop", "type", "source"])
     ap.add_argument("--errors", type=int, default=0, help="print N wrong answers (never for holdout)")
     ap.add_argument("--only", nargs="*", help="restrict to business_ids (dev only)")
+    ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
+    ap.add_argument("--llm-model", help="local weights dir")
+    ap.add_argument("--llm-replay", help="replay/record jsonl")
     args = ap.parse_args()
 
     holdout = set(json.loads((ROOT / "eval" / "splits.json").read_text(encoding="utf8"))["holdout"])
@@ -50,11 +54,13 @@ def main():
             sys.exit("--only is not allowed on holdout")
         qs = [q for q in qs if q["business_id"] in set(args.only)]
 
-    ctx = Context(root=TRAIN)
-    preds, t0 = [], time.time()
+    ctx = Context(root=TRAIN, llm=make_llm(args.llm, args.llm_model, args.llm_replay))
+    preds, sources, t0 = [], {}, time.time()
     for q in qs:
         try:
-            preds.append(answer(q, ctx))
+            row, tr = answer_traced(q, ctx)
+            preds.append(row)
+            sources[q["id"]] = (tr.get("inputs") or {}).get("source", "-")
         except Exception as e:  # report, don't crash
             print(f"ERR {q['id']}: {e!r}", file=sys.stderr)
             preds.append(abstain(q["id"]))
@@ -70,7 +76,8 @@ def main():
     rows = []
     for q in qs:
         g = golds[q["id"]]
-        key = {"intent": lambda: intent_of(q["question"]), "shop": lambda: q["business_id"], "type": lambda: g["type"]}[args.by]()
+        key = {"intent": lambda: intent_of(q["question"]), "shop": lambda: q["business_id"], "type": lambda: g["type"],
+               "source": lambda: sources.get(q["id"], "-")}[args.by]()
         s = score(pm.get(q["id"]), g)
         groups[key][{1: 0, -1: 1, 0: 2}[s]] += 1
         if s == -1:

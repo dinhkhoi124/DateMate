@@ -20,7 +20,12 @@ repos:
   - repo: local
     hooks:
       - id: no-competition-data
-        name: Competition data must not be committed (data/, *.zip, questions/answers.jsonl)
+        name: Competition data must not be committed (data/, archives, any .jsonl)
         language: fail
-        entry: "Do not commit competition data (CLAUDE.md rule 7):"
-        files: '^data/|\.zip$|questions\.jsonl$|answers\.jsonl$'
+        entry: "Do not commit competition data, few-shot or LLM replay (CLAUDE.md rule 7, D15):"
+        files: '^data/|\.(zip|tgz|tar|gz)$|\.jsonl$'
+      - id: no-verbatim-questions
+        name: No competition question copied verbatim (skips without local data)
+        language: system
+        entry: python eval/check_leak.py
+        types: [text]

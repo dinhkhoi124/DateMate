@@ -4,6 +4,59 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D15 — Chạy GPU trên máy thành viên, dữ liệu thi đi qua Drive, repo chỉ nhận code và số liệu (2026-11-07)
+- **Bối cảnh:** máy lead không có GPU. Một thành viên có GPU NVIDIA. Repo GitHub public. Rà soát cho thấy ngoài
+  `data/` còn nhiều đường lộ khác: few-shot (nguyên văn câu train), replay LLM (đầu ra model có mention chép từ câu hỏi
+  train/holdout/public), submission và log public, ghi chú QA tính tay. `tests/` đã có 5 câu chép nguyên văn từ train.
+  Portal Zalo (public submission) bắt chọn loại model: API bên thứ ba, open-source > 15B, small ≤ 15B.
+- **Lựa chọn:**
+  - Thành viên chạy theo `docs/GPU_RUNBOOK.md` bằng một lệnh (`scripts/gpu/run_all.sh`): smoke test
+    (`eval/gpu_smoke.py`, câu tự viết) rồi dev, holdout, public cho Qwen3-8B và 14B, ghi replay. Chế độ ghi
+    `DATAMATE_LLM_CALL_ALL=1` gọi model trên mọi câu (`config.LLMConfig.call_all`), quyết định ensemble không đổi.
+    Lead calibrate và chọn model trên CPU từ replay (D14). Tham số GPU qua env (`DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}`),
+    không nằm trong khoá replay.
+  - Kênh trả kết quả: bundle (replay, submission, log) lên **Drive nhóm**. GitHub chỉ nhận `summary.md` (phiên bản,
+    thời gian, VRAM, bảng PA) qua PR vào `docs/gpu_runs/`.
+  - Chặn nhiều lớp: `.gitignore` bỏ mọi `*.jsonl`, `*.tgz`; pre-commit và CI chặn `data/`, archive, mọi `.jsonl`;
+    hook `eval/check_leak.py` so mọi file text với toàn bộ câu hỏi thi (chỉ in tên file và số lượng, không in câu;
+    không có data thì bỏ qua). Viết lại 5 câu test trùng train, test vẫn pass.
+  - Mọi lần nộp public chọn **"Based on small models (<=15B)"**, kể cả bản rule-only (không dùng model nào), vì chỉ
+    hạng mục SLM được xếp hạng (D02).
+- **Lý do:**
+  - Thành viên không cần hiểu hệ thống: một lệnh, đầu ra cố định, lỗi chỉ cần gửi traceback.
+  - GPU dùng một lần cho mỗi model và prompt. Mọi vòng lặp sau đó chạy trên CPU.
+  - Ghi trên mọi câu thì một lần chạy đủ để thử cả `rescue_gate`, `require_agreement` và `llm_only`.
+  - Kiểm tra tự động bắt được cả các đường lộ không phải file data (câu chép trong test, docs).
+- **Hệ quả:**
+  - Few-shot phải giống hệt giữa hai máy: runbook kiểm sha256. Đổi few-shot hoặc prompt thì phải chạy GPU lại.
+  - Lịch sử git vẫn còn 5 câu train cũ trong test. Không rewrite history (câu ngắn, chung chung, không kèm đáp án).
+    Nếu BTC yêu cầu thì xử lý sau.
+  - Ghi chú QA tính tay (`docs/qa/`, WORKFLOW §3) không được chép câu hỏi hay đáp án: chỉ ghi id và luật áp dụng.
+    File paraphrase của TV3 phải là câu tự viết và qua `check_leak`, hoặc để trên Drive.
+  - Proxy `eval/synth` dùng lại câu dev nên replay dev dùng được cho synth trên CPU. Cần thêm cờ `--llm` vào
+    `eval/synth/run.py` (việc CPU của lead).
+  - 14B BF16 (~29.5 GB weights) **không vừa một RTX 5090 32 GB** với `gpu_memory_utilization=0.85`. Image cuối dùng
+    `tensor_parallel_size=2` trên 2 card của BTC, hoặc bản FP8. Sửa lại ARCHITECTURE §6 khi chốt model.
+
+### D14 — LLM parser: model chỉ chọn op + mention, ensemble mặc định chỉ "cứu" câu bị gate chặn (2026-11-07)
+- **Bối cảnh:** chưa có GPU (máy dev không có NVIDIA, chưa tải model). Phase LLM (PLAN 08–10/11) cần phần lớn code chạy và test được trên CPU, để khi có GPU chỉ còn chạy model và calibrate. Public cho thấy gate từ lạ (D10) bỏ ~368 câu gần như không phân biệt đúng/sai.
+- **Lựa chọn:**
+  - Contract (`parse/llm_schema.py`): model trả JSON `{op, filters, args}` theo JSON schema (guided decoding). `op` thuộc đúng tập handler của executor, thêm `none` = không op nào khớp. **Model không ghi thời gian**: kỳ lấy từ `timeparse` giống rule parser. Filter thực thể (`product, customer, category, ingredient, staff`) là mention chép từ câu hỏi, link bằng chính `Dictionary` của rule parser; không link được đúng 1 mã thì thành `?…` và executor abstain. Arg ngoài contract của op bị bỏ qua.
+  - So khớp bằng `signature()` (op, kiểu đáp án, kỳ, filter đã link, arg của contract, điền mặc định của executor).
+  - Backend thay được (`parse/llm.py`): `VLLMBackend` (offline, guided JSON, temp 0 khi n=1, seed cố định, prefix caching), `ReplayBackend` ghi/đọc jsonl theo hash(model, prompt, n, temp, seed). Ghi output trên máy GPU một lần, sau đó calibrate chính sách ensemble trên CPU.
+  - Ensemble (`parse/ensemble.py`, cờ trong `config.LLMConfig`). Mặc định: (a) rule qua gate → trả lời như cũ, không gọi model; (b) rule bị gate chặn → trả lời khi **mọi** mẫu LLM cùng signature với rule; (c) rule không parse được → abstain (`llm_only` tắt). `require_agreement` (abstain khi rule qua gate mà LLM khác) và `llm_only` (k/k phiếu) để bật sau khi đo.
+  - Few-shot chỉ lấy từ câu dev mà pipeline trả lời đúng (`analysis/build_fewshot.py`), 2 câu/op, ưu tiên khác shop. Prompt = hướng dẫn + bảng op + few-shot (tĩnh) + câu hỏi gốc có dấu.
+  - Log: `thinking` = list output thô của model (D12), `inputs.source` = rule | rule+llm | llm.
+- **Lý do:**
+  - Giữ D04: model không ra số, không ra ngày, không ra mã. Sai của model chỉ có thể là chọn sai op hoặc arg, và đều bị kiểm bằng rule parser.
+  - Mặc định (b) không làm mất câu nào đang đúng, chỉ có thể thêm câu. Rủi ro duy nhất là rule và LLM cùng sai giống nhau trên câu lạ.
+  - Replay giúp tách tiền GPU khỏi vòng lặp calibrate.
+- **Hệ quả:**
+  - Backend `off` (mặc định) cho kết quả y hệt bản rule-only.
+  - `llm_only` cần nhiều mẫu (n_samples ≥ 3, temp > 0), tốn thời gian hơn. Đo trên holdout/proxy trước khi bật.
+  - Chưa chốt model (việc riêng, cần GPU): ứng viên dòng Qwen3 8B/14B (ARCHITECTURE §6).
+  - `parse/fewshot.jsonl` chứa nguyên văn câu hỏi train nên bị gitignore (D13). Mỗi máy và mỗi lần build image phải sinh lại bằng `analysis/build_fewshot.py`. Thiếu file thì prompt không có ví dụ.
+
 ### D13 — Quy trình nhóm: pre-commit + GitHub Actions CI + ruleset cho main (2026-11-06)
 - **Bối cảnh:** sắp có thêm 2 thành viên clone repo và mở PR. Image nộp bài build từ `main`, nên `main` hỏng là mất lượt nộp. Repo để public. Dữ liệu thi không được đưa lên GitHub.
 - **Lựa chọn:**

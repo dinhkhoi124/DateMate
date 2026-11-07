@@ -11,7 +11,17 @@ import time
 import traceback
 from pathlib import Path
 
+from datamate.config import LLMConfig
 from datamate.pipeline import Context, abstain, answer_traced
+
+
+def make_llm(backend: str | None = None, model: str | None = None, replay: str | None = None):
+    """LLM parser from env (DATAMATE_LLM*) with CLI overrides; None when the backend is 'off' (D14)."""
+    from datamate.parse.llm import LLMParser, make_backend
+    kw = {k: v for k, v in (("backend", backend), ("model_path", model), ("replay_path", replay)) if v}
+    cfg = LLMConfig.from_env(**kw)
+    be = make_backend(cfg)
+    return LLMParser(be, cfg) if be is not None else None
 
 
 def find_root(data: Path) -> Path:
@@ -30,12 +40,15 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="/result/submission.jsonl")
     ap.add_argument("--log", default=None, help="per-question log jsonl (default: <out dir>/logs/log.jsonl)")
     ap.add_argument("--only", nargs="*", help="restrict to these business_ids (dev use)")
+    ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
+    ap.add_argument("--llm-model", help="local weights dir (default: $DATAMATE_LLM_MODEL)")
+    ap.add_argument("--llm-replay", help="replay/record jsonl (default: $DATAMATE_LLM_REPLAY)")
     args = ap.parse_args(argv)
 
     root = find_root(Path(args.data))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    ctx = Context(root=root)
+    ctx = Context(root=root, llm=make_llm(args.llm, args.llm_model, args.llm_replay))
     with open(root / "questions.jsonl", encoding="utf8") as f:
         qs = [json.loads(l) for l in f if l.strip()]
     if args.only:

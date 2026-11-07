@@ -62,16 +62,21 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
    - [x] Sinh lại public (`eval/runs/public_v0.4`, 57d2d2f): vẫn **107 câu** abstain do không có bảng đơn, cùng 2 shop như v0.2/v0.3 (số 214 cũ đếm trùng). Loại câu trả lời y hệt v0.3 (abstain 690), 21 câu đổi giá trị. Các sửa ingest từ proxy chưa chạm tới 2 shop này
    - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
 3. - [ ] Luật đọc từ rulebook lúc chạy (xác minh D03 trên forum trước)
-4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ
+4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ. Code CPU xong 07/11 (D14), còn chạy model
 5. - [ ] Code-gen fallback để cuối
 - [x] Song song: Dockerfile bản rule-only trước 10/11 (dự phòng)
    - [x] `docker/Dockerfile` (python:3.11-slim, deps pin `docker/requirements.txt`), `docker/predict.sh` → `/code/predict.sh`, `/code/training_code/data_manifest.json` (`docker/make_manifest.py`), `.dockerignore`. Image chứa code + `data/train/train`. 06/11: 142 test pass; giả lập `predict.sh` local (`DATAMATE_CACHE` → thư mục tạm) ghi đúng submission + `logs/log.jsonl`, cache không rơi vào repo
    - [x] Build + chạy thử `--network none --shm-size=16g -v <split>:/data:ro -v <out>:/result` (06/11, sau khi sửa PATH WSL): image 1.08GB, train 3000 câu trong 386s (CPU, gồm ingest nguội), submission container **giống hệt local 3000/3000**, `submit_check` PASS, log 3000 dòng. Chưa chạy với `--gpus` (máy không có GPU NVIDIA)
 
 **08–10/11 — LLM** (cần GPU)
-- [ ] Chốt model ≤ 15B, ghi vào `DECISIONS.md`
-- [ ] vLLM + guided JSON, prompt có few-shot từ dev
-- [ ] Ensemble + Confidence Gate, calibrate. **Mục tiêu PA holdout ≥ 0.85, precision ≥ 97%**
+- [x] (07/11, CPU) Phần không cần GPU (D14): contract `parse/llm_schema.py` (op = handler executor + `none`, kỳ lấy từ timeparse, mention link bằng Dictionary), backend `parse/llm.py` (vLLM offline guided JSON / replay jsonl ghi-đọc), ensemble `parse/ensemble.py` + `config.LLMConfig`, cờ `--llm/--llm-model/--llm-replay` cho `datamate.run` và `eval/run_eval.py` (`--by source`). Round-trip Intent → JSON → Intent **2410/2410** câu dev đúng. Backend replay rỗng: dev 2410/0/37 không đổi. 153 test pass
+- [x] Few-shot từ dev (`analysis/build_fewshot.py`): 81 câu, 41 op, prompt ~16.7k ký tự (~7k token). 6 op chưa có câu dev đúng: import_minus_sales, stock_out_count, net_profit, delivery_count, nearest_expiry, expiring_lots_count
+- [x] (07/11) Quy trình GPU qua máy thành viên (D15): `docs/GPU_RUNBOOK.md`, `scripts/gpu/run_all.sh`, `eval/gpu_smoke.py`, chế độ ghi `DATAMATE_LLM_CALL_ALL`. Chặn lộ dữ liệu: gitignore/pre-commit/CI chặn mọi `.jsonl`, hook `eval/check_leak.py`, viết lại 5 câu test trùng train
+- [ ] Thành viên GPU chạy runbook (hạn 10/11): smoke + dev + holdout + public cho Qwen3-8B và 14B, bundle lên Drive, PR `docs/gpu_runs/`. Kiểm tra guided JSON trên bản vLLM đó, bản đó thành bản pin
+- [ ] (CPU) Chốt model ≤ 15B từ replay: độ khớp signature với rule trên dev, thời gian/câu, VRAM; ghi `DECISIONS.md`. 14B BF16 cần TP=2 hoặc FP8 trên 5090 (D15)
+- [ ] (CPU) Thêm cờ `--llm` cho `eval/synth/run.py`, đo proxy synth bằng replay dev
+- [ ] Calibrate ensemble trên replay (CPU): `rescue_gate` (mặc định bật), `require_agreement`, `llm_only` + `n_samples`. **Mục tiêu PA holdout ≥ 0.85, precision ≥ 97%**
+- [ ] Image LLM: base CUDA ≥ 12.8 + vLLM pin, weights trong image, so container với local như bản rule-only
 
 **10–12/11 — Mở rộng**
 - [ ] Fallback code-gen cho câu OOD
@@ -85,7 +90,7 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
 
 ### Phase 4 — Deploy (12–16/11)
 - [ ] Dockerfile (CUDA ≥ 12.8, weights đóng gói sẵn), chạy `--network none`
-- [ ] Nộp public (≤ 5 lần/ngày), ghi kết quả vào `EXPERIMENTS.md`
+- [ ] Nộp public (≤ 5 lần/ngày), model type **"Based on small models (<=15B)"** (D15), ghi kết quả vào `EXPERIMENTS.md`
 - [ ] **Nộp image cuối trước 16/11 23:59**
 
 ### Phase 5 — Maintain (20–23/11)

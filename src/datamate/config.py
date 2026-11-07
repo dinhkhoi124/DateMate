@@ -78,6 +78,58 @@ class Invariants:
 INVARIANTS = Invariants()
 
 
+@dataclass(frozen=True)
+class LLMConfig:
+    """LLM parser + ensemble (DECISIONS D14). backend 'off' = rule-only pipeline, unchanged behaviour.
+    Env: DATAMATE_LLM (off|vllm|replay), DATAMATE_LLM_MODEL (local weights dir), DATAMATE_LLM_REPLAY (jsonl),
+    DATAMATE_LLM_SAMPLES, DATAMATE_LLM_MODEL_ID, DATAMATE_LLM_CALL_ALL, DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}."""
+    backend: str = "off"
+    model_path: str = ""
+    model_id: str = ""                      # cache key part; defaults to the weights dir name
+    dtype: str = "bfloat16"
+    max_model_len: int = 12288                # prompt ~7k tokens (81 few-shot), prefix-cached
+    gpu_memory_utilization: float = 0.85
+    tensor_parallel_size: int = 1
+    max_tokens: int = 256
+    n_samples: int = 1                      # > 1: self-consistency votes, sampled at `temperature`
+    temperature: float = 0.7
+    top_p: float = 0.95
+    seed: int = 2026
+    chat_template_kwargs: dict = None       # e.g. {"enable_thinking": False} for Qwen3
+    replay_path: str = ""
+    # ensemble policy (parse/ensemble.py); defaults keep every current rule answer and only add rescued ones
+    rescue_gate: bool = True                # gate-blocked rule intent answered when every LLM sample agrees with it
+    require_agreement: bool = False         # also abstain on gate-passed rule intents the LLM disagrees with
+    llm_only: bool = False                  # answer when the rule parser has nothing and all samples agree
+    llm_only_min_votes: int = 3
+    # record mode (D15): call the model on every question so a replay covers every policy; decisions unchanged
+    call_all: bool = False
+
+    def __post_init__(self):
+        if self.chat_template_kwargs is None:
+            object.__setattr__(self, "chat_template_kwargs", {"enable_thinking": False})
+        if not self.model_id and self.model_path:
+            object.__setattr__(self, "model_id", Path(self.model_path).name)
+
+    @classmethod
+    def from_env(cls, **kw) -> "LLMConfig":
+        env = {"backend": os.environ.get("DATAMATE_LLM", "off"), "model_path": os.environ.get("DATAMATE_LLM_MODEL", ""),
+               "replay_path": os.environ.get("DATAMATE_LLM_REPLAY", "")}
+        if os.environ.get("DATAMATE_LLM_SAMPLES"):
+            env["n_samples"] = int(os.environ["DATAMATE_LLM_SAMPLES"])
+        if os.environ.get("DATAMATE_LLM_MODEL_ID"):
+            env["model_id"] = os.environ["DATAMATE_LLM_MODEL_ID"]
+        # GPU-side knobs for the teammate machine (docs/GPU_RUNBOOK.md); none of them is part of the replay key
+        for var, field, typ in (("DATAMATE_LLM_DTYPE", "dtype", str), ("DATAMATE_LLM_TP", "tensor_parallel_size", int),
+                                ("DATAMATE_LLM_GPU_UTIL", "gpu_memory_utilization", float),
+                                ("DATAMATE_LLM_MAX_LEN", "max_model_len", int)):
+            if os.environ.get(var):
+                env[field] = typ(os.environ[var])
+        if os.environ.get("DATAMATE_LLM_CALL_ALL", "") not in ("", "0"):
+            env["call_all"] = True
+        return cls(**{**env, **kw})
+
+
 def cache_root() -> Path:
     """Writable cache dir. SPEC §7 câu 2: in Docker /data is read-only and temp files go to /tmp, so predict.sh sets
     DATAMATE_CACHE=/tmp/datamate_cache. Default (dev): <repo>/cache."""
