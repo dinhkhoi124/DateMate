@@ -177,6 +177,23 @@ lấy 5 mẫu mỗi câu cho self-consistency.
    Thấy câu hỏi tiếng Việt nào khác 4 câu smoke thì **không commit**, báo lead.
 3. Nhắn nhóm: tên run, GPU, model nào chạy được, lỗi nếu có.
 
+## 6b. Build và kiểm image LLM (chỉ khi lead nhắn, sau khi đã chọn model)
+
+Cần Docker + NVIDIA Container Toolkit (`docker run --rm --gpus all ubuntu nvidia-smi` phải thấy GPU), ổ trống ≥ 80 GB.
+Lead báo `<model>` và tên tag. Few-shot phải có sẵn và đúng sha (mục 3), nếu không build sẽ dừng.
+
+```bash
+git pull
+docker build --platform linux/amd64 -f docker/Dockerfile.llm \
+  --build-context weights=models/<model> --build-arg MODEL=<model> -t zaic2026_datamate_<team>:final .
+# 2 GPU (giống máy chấm):
+bash scripts/gpu/check_image.sh zaic2026_datamate_<team>:final data/train/train
+# 1 GPU: GPUS=0 TP=1 bash scripts/gpu/check_image.sh ...
+```
+
+Gửi lead trong nhóm chat: các dòng script in ra (exit, thời gian, `submit_check`, PA train). Thư mục output
+(`eval/runs/image_check/...`) chỉ upload lên **Drive nhóm**. Không chạy image trên `public_test` trừ khi lead yêu cầu.
+
 ## 7. Lỗi hay gặp
 
 | Triệu chứng | Cách xử lý |

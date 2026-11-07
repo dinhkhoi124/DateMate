@@ -11,4 +11,4 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
 mkdir -p /result/logs "$DATAMATE_CACHE"
 cd /code
-exec python -m datamate.run --data /data --out /result/submission.jsonl --log /result/logs/log.jsonl
+exec python3 -m datamate.run --data /data --out /result/submission.jsonl --log /result/logs/log.jsonl

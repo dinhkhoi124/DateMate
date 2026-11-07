@@ -1,7 +1,15 @@
-# DataMate — Zalo AI Challenge 2026 (image rule-only)
+# DataMate — Zalo AI Challenge 2026
 
-Agent trả lời câu hỏi tiếng Việt trên dữ liệu bảng của shop nhỏ. Bản này không dùng model: parser luật + executor
-deterministic, không đủ căn cứ thì abstain.
+Agent trả lời câu hỏi tiếng Việt trên dữ liệu bảng của shop nhỏ: parser luật + executor deterministic, không đủ căn
+cứ thì abstain. Có hai image dùng chung bố cục `/code` và `predict.sh`:
+
+- **rule-only** (`docker/Dockerfile`): không dùng model.
+- **LLM** (`docker/Dockerfile.llm`), base `vllm/vllm-openai:v0.10.1.1`. Model: **Qwen3** (bản ghi trong
+  `DATAMATE_LLM_MODEL`, weights trong `/code/models/`), ≤ 15B tham số, chạy offline, tensor parallel trên 2 GPU.
+  - Model chỉ chuyển câu hỏi thành intent JSON (ép schema); mọi con số do executor tính.
+  - Câu bị chặn vì rulebook của split khác train có thể được model xác nhận là không bị ảnh hưởng (rule judge, đang tắt).
+  - Không load được model thì chạy bản rule-only, có ghi lý do vào log.
+  - `thinking` trong log là đầu ra thô của model.
 
 ## Chạy
 

@@ -89,6 +89,8 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
 - [ ] (CPU, khi có replay) Đo proxy synth bằng replay dev: `eval/synth/run.py --llm replay --llm-model models/<M> --llm-replay <dev replay>`
 - [ ] Calibrate ensemble trên replay (CPU): `rescue_gate` (mặc định bật), `require_agreement`, `llm_only` + `n_samples`. **Mục tiêu PA holdout ≥ 0.85, precision ≥ 97%**
 - [ ] Image LLM: base CUDA ≥ 12.8 + vLLM pin, weights trong image, so container với local như bản rule-only
+   - [x] (07/11) `docker/Dockerfile.llm` (base `vllm/vllm-openai:v0.10.1.1`, weights qua `--build-context weights=`, kiểm sha few-shot lúc build, cache vào `/tmp`, TP=2, `NCCL_P2P_DISABLE=1`, judge tắt), `scripts/gpu/check_image.sh` (lệnh BTC + submit_check + PA train), runbook mục 6b. `run.py`: không load được model thì chạy rule-only (đã thử). **Dockerfile chưa build lần nào**: build local bị dừng khi đang tải base (máy thiếu RAM)
+   - [ ] Build + chạy `check_image.sh` trên máy GPU có weights (runbook 6b), so PA train với local
 
 **11/11 — Go/no-go 1 (D16)**
 - [ ] So PA public các milestone (baseline, rulebook, LLM). Ngưỡng chốt sau khi có baseline. Không đạt thì dừng LLM, dồn sức cho đọc rulebook và ingest, nộp image rule-only

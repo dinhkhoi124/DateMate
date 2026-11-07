@@ -48,7 +48,12 @@ def main(argv=None) -> int:
     root = find_root(Path(args.data))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    ctx = Context(root=root, llm=make_llm(args.llm, args.llm_model, args.llm_replay))
+    try:
+        llm = make_llm(args.llm, args.llm_model, args.llm_replay)
+    except Exception:  # model failed to load (no GPU, OOM...): run the measured rule-only system, never crash (D14)
+        print(f"[datamate] LLM disabled, rule-only run:\n{traceback.format_exc(limit=3)}", file=sys.stderr)
+        llm = None
+    ctx = Context(root=root, llm=llm)
     with open(root / "questions.jsonl", encoding="utf8") as f:
         qs = [json.loads(l) for l in f if l.strip()]
     if args.only:
