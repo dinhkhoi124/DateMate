@@ -75,6 +75,8 @@ def main(argv=None) -> int:
             lg.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
             lg.flush()
     print(f"[datamate] {len(qs)} questions in {time.time() - t0:.1f}s -> {out}", file=sys.stderr)
+    if ctx.llm is not None:
+        print(ctx.llm.stats_line(), file=sys.stderr)
     return 0
 
 

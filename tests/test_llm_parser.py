@@ -126,6 +126,7 @@ def test_parser_with_fake_backend_and_replay(tmp_path):
     replay = LLMParser(ReplayBackend(tmp_path / "r.jsonl", cfg), cfg, examples=[])
     assert replay.parse("Tháng 5 bán bao nhiêu ly cà phê sữa đá?", MAY, _lk())[1] == [out]
     assert replay.parse("Câu khác?", MAY, _lk()) == ([], [])        # miss -> no answer, never a guess
+    assert (p.calls, p.failed) == (2, 0) and replay.stats_line() == "llm_calls=2 llm_failed=1"
 
 
 # --------------------------------------------------------------------------- pipeline, on a dev shop (never holdout)

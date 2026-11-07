@@ -100,6 +100,8 @@ def main():
         print(f"\n--- {min(args.errors, len(rows))} wrong answers ---")
         for q, p, g in rows[: args.errors]:
             print(f"{q['business_id']} {q['as_of_date']} | {q['question']}\n   pred={json.dumps(p, ensure_ascii=False)[:160]}\n   gold={json.dumps({'type': g['type'], 'answer': g['answer']}, ensure_ascii=False)[:160]}")
+    if ctx.llm is not None:
+        print(ctx.llm.stats_line())
     print(f"\nrun dir: {run_dir.relative_to(ROOT)}")
 
 

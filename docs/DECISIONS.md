@@ -29,6 +29,11 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   - Kiểm tra tự động bắt được cả các đường lộ không phải file data (câu chép trong test, docs).
 - **Hệ quả:**
   - Few-shot phải giống hệt giữa hai máy: runbook kiểm sha256. Đổi few-shot hoặc prompt thì phải chạy GPU lại.
+  - Máy chấm là 2× RTX 5090 32 GB (SPEC): image cuối chạy 14B BF16 với TP=2. Replay ghi bằng TP=1 hoặc bản AWQ/FP8 có
+    thể lệch vài token so với image, nên calibrate ensemble theo thống kê, không kỳ vọng image khớp replay từng câu.
+    Trước khi nộp phải đo lại PA dev bằng chính image đó.
+  - Backend vLLM nuốt lỗi để không làm sập run, nên `LLMParser` đếm `llm_calls/llm_failed`. Summary GPU in số này và
+    cảnh báo khi > 0.
   - Lịch sử git vẫn còn 5 câu train cũ trong test. Không rewrite history (câu ngắn, chung chung, không kèm đáp án).
     Nếu BTC yêu cầu thì xử lý sau.
   - Ghi chú QA tính tay (`docs/qa/`, WORKFLOW §3) không được chép câu hỏi hay đáp án: chỉ ghi id và luật áp dụng.

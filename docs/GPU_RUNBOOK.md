@@ -1,7 +1,8 @@
 # GPU RUNBOOK — Chạy LLM parser trên máy GPU của thành viên
 
 Người chạy: thành viên có GPU NVIDIA. Người nhận kết quả: lead (Khôi). Quyết định liên quan: `DECISIONS.md` D14, D15.
-Thời gian dự kiến: 1–2 giờ máy chạy, ~30 phút thao tác. Hạn: **10/11** (để kịp calibrate và đóng image trước 12/11).
+Thời gian dự kiến: **3–6 giờ máy chạy** cho cả 8B và 14B (model gọi từng câu, ~4000 câu mỗi model, 14B chiếm phần lớn),
+~30 phút thao tác. Nên bắt đầu buổi tối hoặc chạy qua đêm. Hạn: **10/11** (để kịp calibrate và đóng image trước 12/11).
 
 ## 0. Bạn cần làm gì, gửi lại gì
 
@@ -34,6 +35,17 @@ Repo GitHub để **public**. Đưa dữ liệu thi lên đó là vi phạm (D13
 Windows mới (đã hỗ trợ WSL sẵn, không cài driver trong Ubuntu). Đặt repo trong ổ Linux (`~/...`), không đặt ở `/mnt/c`:
 đọc file qua `/mnt/c` chậm hơn nhiều.
 
+**RAM cho WSL2:** mặc định WSL chỉ được 50% RAM máy, trong khi ingest 30 shop cộng load 14B (~30 GB RAM) dễ bị kill
+giữa chừng (log dừng đột ngột, không traceback). Tạo `%UserProfile%\.wslconfig` trên Windows:
+
+```ini
+[wsl2]
+memory=48GB   # để lại ~8 GB cho Windows; máy 32 GB RAM thì đặt 26GB
+swap=32GB
+```
+
+rồi chạy `wsl --shutdown` trong PowerShell và mở lại Ubuntu. Kiểm tra bằng `free -g`.
+
 **Kiểm tra:** `nvidia-smi` phải thấy GPU. Ổ trống ≥ 60 GB (14B BF16 ~30 GB, 8B ~16 GB, môi trường Python ~10 GB).
 
 **Chọn model theo VRAM** (gửi lead dòng `nvidia-smi` trước khi tải nếu không chắc):
@@ -41,12 +53,15 @@ Windows mới (đã hỗ trợ WSL sẵn, không cài driver trong Ubuntu). Đ�
 | VRAM | Qwen3-8B | Qwen3-14B | Biến môi trường thêm |
 |---|---|---|---|
 | ≥ 40 GB 1 card (A6000, L40S, A100) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B` | – |
-| 2 card × 24 GB trở lên | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B` | `DATAMATE_LLM_TP=2` khi chạy 14B |
-| 24 GB (3090, 4090) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B-AWQ` | 3090: `DATAMATE_LLM_DTYPE=float16` cho bản AWQ |
+| 2 card × 24 GB trở lên (vd 2× 5090, giống máy chấm) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B` | `DATAMATE_LLM_TP=2` khi chạy 14B |
+| 32 GB 1 card (RTX 5090) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B-FP8` | – (14B BF16 ~29.5 GB, không vừa 1 card) |
+| 24 GB (3090, 4090) | `Qwen/Qwen3-8B` | `Qwen/Qwen3-14B-AWQ` | `DATAMATE_LLM_DTYPE=float16` khi chạy bản AWQ |
 | 16 GB (4060 Ti 16G, 4080) | `Qwen/Qwen3-8B-AWQ` | `Qwen/Qwen3-14B-AWQ` | `DATAMATE_LLM_DTYPE=float16` |
 | < 16 GB, hoặc card trước dòng RTX 30 | báo lead, không chạy | | |
 
-Bản AWQ chỉ để so sánh tương đối. Nếu chỉ chạy được AWQ, ghi rõ trong tin nhắn.
+**Mọi bản AWQ đều đặt `DATAMATE_LLM_DTYPE=float16`** (mặc định là bfloat16, kernel AWQ có thể từ chối). Chạy 8B BF16 và
+14B AWQ trong cùng lệnh thì tách làm hai lệnh `run_all.sh`, biến env chỉ đặt cho lệnh AWQ. Bản FP8 giữ mặc định.
+Bản AWQ/FP8 chỉ để so sánh tương đối. Nếu chỉ chạy được bản lượng tử hoá, ghi rõ trong tin nhắn.
 Hết VRAM (`CUDA out of memory`): thử `DATAMATE_LLM_GPU_UTIL=0.92`, rồi `DATAMATE_LLM_MAX_LEN=10240`.
 
 ## 3. Cài đặt (một lần)
@@ -56,9 +71,14 @@ git clone https://github.com/dinhkhoi124/DateMate.git && cd DateMate
 git checkout feat/llm-parser          # nhánh lead báo; sau khi merge thì dùng main
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -U pip
+pip install -r docker/requirements.txt   # pandas/numpy… đúng bản máy lead: few-shot sinh ra phải giống hệt
 pip install -e ".[dev,llm]"           # cài vLLM bản mới nhất, kéo theo torch đúng CUDA
+pip freeze | grep -iE '^(pandas|numpy|openpyxl|python-calamine|duckdb|pyarrow)=='
 pre-commit install                    # chặn commit nhầm dữ liệu
 ```
+
+So dòng `pip freeze` với `docker/requirements.txt`. Nếu vLLM kéo bản numpy/pandas khác (pip báo conflict hoặc số khác
+nhau), **gửi lead output của pip**, đừng tự ép phiên bản. Bước kiểm sha256 few-shot bên dưới sẽ cho biết có lệch thật không.
 
 Không có `python3.11`: `sudo apt install python3.11 python3.11-venv` (Ubuntu 24.04 cần PPA deadsnakes).
 Phiên bản vLLM bạn cài sẽ thành bản **pin** cho image nộp bài, nên script tự ghi lại; đừng nâng cấp giữa chừng.
@@ -86,7 +106,14 @@ Mã sha256 phải là `072b28612da1a1c2bc1730d24e50ca70fea20c9e3e3cf069fc49eae4d
 pip install -U "huggingface_hub[cli]"
 hf download Qwen/Qwen3-8B  --local-dir models/Qwen3-8B
 hf download Qwen/Qwen3-14B --local-dir models/Qwen3-14B
-# bản AWQ (nếu bảng trên bảo vậy): --local-dir models/Qwen3-14B-AWQ, v.v.
+# bản lượng tử (nếu bảng trên bảo vậy): hf download Qwen/Qwen3-14B-AWQ --local-dir models/Qwen3-14B-AWQ, tương tự -FP8
+```
+
+Ví dụ máy 24 GB:
+
+```bash
+bash scripts/gpu/run_all.sh models/Qwen3-8B
+DATAMATE_LLM_DTYPE=float16 bash scripts/gpu/run_all.sh models/Qwen3-14B-AWQ
 ```
 
 ## 4. Smoke test (5–10 phút, làm trước khi chạy lớn)
@@ -118,6 +145,10 @@ Với mỗi model, script chạy: smoke → dev (24 shop) → holdout (6 shop, c
 Model được gọi trên **mọi** câu (`DATAMATE_LLM_CALL_ALL=1`) để lead thử được mọi chính sách ensemble trên CPU mà
 không cần chạy lại GPU. Câu trả lời cuối vẫn theo chính sách mặc định, nên bảng PA trong summary là PA thật.
 
+Sau mỗi split, summary có dòng `llm_calls=N llm_failed=K`. Nếu terminal in `WARNING <split>` (K > 0 hoặc không có
+dòng này) thì model đã lỗi và split đó chỉ chạy bằng rule: gửi lead các dòng `[llm] generate failed` cùng traceback
+trong `eval/runs/gpu/<run>/logs/<split>_<model>.txt` (chỉ dòng lỗi, không gửi cả file).
+
 Kết thúc, script in ra hai đường dẫn:
 
 - `eval/runs/gpu/<run>/summary.md`: chỉ có số liệu.
@@ -129,7 +160,9 @@ lấy 5 mẫu mỗi câu cho self-consistency.
 ## 6. Gửi kết quả
 
 1. Upload `bundle_<run>.tgz` lên thư mục Drive nhóm `DataMate/gpu_runs/`.
-2. Mở PR chỉ chứa summary:
+2. Mở PR chỉ chứa summary. Cần quyền ghi vào repo (lead mời làm collaborator). Chưa có quyền thì fork repo, push lên
+   fork rồi mở PR từ fork. Tên run có `hostname` máy bạn và sẽ hiện trên repo public; muốn ẩn thì đổi tên máy hoặc
+   đổi tên file khi copy (giữ phần ngày giờ).
    ```bash
    git checkout -b chore/gpu-run-<run>
    mkdir -p docs/gpu_runs && cp eval/runs/gpu/<run>/summary.md docs/gpu_runs/<run>.md
@@ -144,6 +177,8 @@ lấy 5 mẫu mỗi câu cho self-consistency.
 
 | Triệu chứng | Cách xử lý |
 |---|---|
+| Log dừng giữa chừng, không traceback, `dmesg` có `Killed process` | Hết RAM trong WSL: tăng `memory`/`swap` ở mục 2 |
+| `WARNING <split>` / `llm_failed` > 0 | Mục 5: gửi lead dòng `[llm] generate failed` + traceback |
 | `No module named vllm` | Chưa `source .venv/bin/activate`, hoặc cài thiếu `.[llm]` |
 | `CUDA out of memory` | Mục 2: tăng `DATAMATE_LLM_GPU_UTIL`, giảm `DATAMATE_LLM_MAX_LEN`, hoặc dùng bản AWQ |
 | `Bfloat16 is only supported on GPUs with compute capability >= 8.0` | Card cũ: `DATAMATE_LLM_DTYPE=float16` |

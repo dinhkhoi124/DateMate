@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Protocol
 
@@ -96,7 +97,9 @@ class VLLMBackend:
                  for p in prompts]
         try:
             res = self.llm.generate(texts, self._sampling(n), use_tqdm=False)
-        except Exception:
+        except Exception:  # never crash a run; traceback only (no prompt text) so the GPU log can be shared
+            import traceback  # noqa: PLC0415
+            print(f"[llm] generate failed:\n{traceback.format_exc(limit=3)}", file=sys.stderr)
             return [[] for _ in prompts]
         return [[o.text for o in r.outputs] for r in res]
 
@@ -162,12 +165,20 @@ class LLMParser:
     def __init__(self, backend: Backend, cfg: LLMConfig, examples: list[dict] | None = None):
         self.backend, self.cfg = backend, cfg
         self.examples = load_fewshot() if examples is None else examples
+        # backends swallow errors and return [] (never crash a run); count them so a GPU run that silently fell
+        # back to rule-only shows up in the summary (docs/GPU_RUNBOOK.md)
+        self.calls = self.failed = 0
 
     def prompt(self, question: str) -> str:
         return build_prompt(question, self.examples)
 
+    def stats_line(self) -> str:
+        return f"llm_calls={self.calls} llm_failed={self.failed}"
+
     def parse(self, question: str, periods, lk) -> tuple[list[Intent | None], list[str]]:
         """n samples -> (intents, raw outputs). An unparsable or out-of-contract sample gives None."""
         outs = self.backend.complete([self.prompt(question)], self.cfg.n_samples)[0]
+        self.calls += 1
+        self.failed += not outs
         its = [to_intent(parse_json(o), periods, lk) for o in outs]
         return its, outs

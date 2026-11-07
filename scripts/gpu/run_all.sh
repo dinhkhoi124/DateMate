@@ -49,6 +49,16 @@ step() {  # step <name> <logfile> <cmd...> : run, time, append a line to the sum
   return $rc
 }
 
+llm_stats() {  # llm_stats <split> <logfile> : model calls / failed calls (the backend swallows errors, D15)
+  local line; line=$(grep -E '^llm_calls=' "$2" | tail -1)
+  echo "    ${1} ${line:-llm_calls=? (no stats line: run crashed?)}" >> "$SUM"
+  case "$line" in
+    *" llm_failed=0") ;;
+    *) echo "    **WARNING ${1}: model calls failed or missing, see logs/${1}_*.txt**" >> "$SUM"
+       echo "[$(date +%H:%M:%S)] WARNING ${1}: ${line:-no llm stats} -> send the lead the traceback" ;;
+  esac
+}
+
 for M in "$@"; do
   M="${M%/}"; ID="$(basename "$M")"
   [ -f "$M/config.json" ] || { echo "skip ${M}: no config.json"; echo "- ${ID}: **missing weights**" >> "$SUM"; continue; }
@@ -63,6 +73,7 @@ for M in "$@"; do
     step "${SPLIT}" "$OUT/logs/${SPLIT}_${ID}.txt" "$PY" eval/run_eval.py --split "$SPLIT" --by source \
       --llm vllm --llm-model "$M" --llm-replay "$OUT/replay/${ID}_${SPLIT}_n${SAMPLES}.jsonl"
     { echo '    ```'; grep -E '^(split=|by source| *(rule|rule\+llm|llm|none|-) )' "$OUT/logs/${SPLIT}_${ID}.txt"; echo '    ```'; } >> "$SUM"
+    llm_stats "${SPLIT}" "$OUT/logs/${SPLIT}_${ID}.txt"
   done
 
   if [ -d data/public_test ]; then
@@ -75,6 +86,7 @@ rows = [json.loads(l) for l in open(sys.argv[1], encoding="utf8") if l.strip()]
 c = collections.Counter(r.get("type") for r in rows)
 print(f"    public answers: {len(rows)} rows, types {dict(sorted(c.items(), key=str))}")
 EOF
+    llm_stats "public" "$OUT/logs/public_${ID}.txt"
   fi
   kill "$SMI" 2>/dev/null
   PEAK=$(cut -d, -f2 "$OUT/logs/vram_${ID}.csv" | grep -oE '[0-9]+' | sort -n | tail -1)
