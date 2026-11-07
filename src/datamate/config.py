@@ -6,11 +6,8 @@ Defaults are the train rulebook values; `from_rulebook(text)` re-reads them from
 from __future__ import annotations
 
 import os
-import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
-
-from unidecode import unidecode
 
 
 @dataclass(frozen=True)
@@ -26,28 +23,10 @@ class Rules:
 DEFAULT = Rules()
 
 
-def _hms(h, m):
-    return int(h) * 3600 + int(m) * 60
-
-
 def from_rulebook(text: str | None) -> Rules:
-    if not text:
-        return DEFAULT
-    t = unidecode(text).lower()
-    r = DEFAULT
-    m = re.search(r"ca sang (\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})", t)
-    if m:
-        r = replace(r, morning=(_hms(m[1], m[2]), _hms(m[3], m[4]) + 59))
-    m = re.search(r"ca chieu (\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})", t)
-    if m:
-        r = replace(r, afternoon=(_hms(m[1], m[2]), _hms(m[3], m[4]) + 59))
-    m = re.search(r"tu ngay duong cua \**(\d{1,2}) thang chap", t)
-    if m:
-        r = replace(r, tet_start=(int(m[1]), 12))
-    m = re.search(r"mung (\d{1,2}) thang gieng", t)
-    if m:
-        r = replace(r, tet_end=(int(m[1]), 1))
-    return r
+    """Rules of a split's rulebook (D07, D18): parameters re-read only from rows that match the train rule template."""
+    from datamate.rulebook import analyse  # noqa: PLC0415  (rulebook imports this module)
+    return analyse(text).rules
 
 
 @dataclass(frozen=True)

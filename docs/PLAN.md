@@ -64,8 +64,9 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
    - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
 3. - [ ] **Ưu tiên ngang LLM (D16): đọc rulebook lúc chạy.** Đề yêu cầu dùng rulebook của đúng split (SPEC §7.1). Không xem rulebook public để định hướng code
    - [x] Liệt kê tham số luật đang đặt cứng từ rulebook train, mỗi luật gắn mục rulebook và op chịu ảnh hưởng: `docs/RULEBOOK_PARAMS.md` (07/11). Đọc lúc chạy mới 4 tham số (ca, Tết); P✗: đầu tuần, phí phục vụ, size, quá/từ N, N ngày, tuổi nợ, làm tròn. Đề xuất đối chiếu rulebook theo dòng (hash), luật định nghĩa đổi thì abstain op liên quan: chờ duyệt
-   - [ ] Parser rulebook theo cấu trúc rulebook train → config lúc chạy; không đọc được thì giữ mặc định train và ghi note vào log
-   - [ ] Rulebook tổng hợp (đổi tham số trên shop dev) + đáp án tính lại → đo đúng/sai; dev và holdout không giảm
+   - [x] (07/11, D18) `datamate/rulebook.py`: tách rulebook thành 75 dòng luật, so hash với `rulebook_index.json` (sinh từ train bằng `analysis/build_rulebook_index.py`, không chứa chữ). Tham số (ca, Tết, đầu tuần) đọc lại khi chỉ đổi số; định nghĩa đổi/mất → chặn phạm vi (op/filter/loại kỳ); dòng mới → từ khoá chưa có trong train. Log chỉ ghi số đếm
+   - [x] Rulebook tổng hợp trên dev: train → giống hệt (dev 2410/0/37, holdout 485/10/58 byte-identical); S1 đổi ca + đầu tuần → 113 câu đổi đáp án, đúng 68 câu kỳ tuần + 45 câu ca, 0 câu khác; S2 đổi §1.1 → 0 sai, 2005 abstain. 11 test mới (166 pass)
+   - [ ] **Public v0.8 với D18: 995/1000 abstain** (3 dòng đổi, 3 dòng mất, 25 dòng mới, 42 phạm vi bị chặn). Chờ quyết định có nộp/nới không (xem EXPERIMENTS 07/11)
    - [ ] Nộp public bản có đọc rulebook (milestone)
 4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ. Code CPU xong 07/11 (D14), còn chạy model
 5. - [ ] Code-gen fallback để cuối

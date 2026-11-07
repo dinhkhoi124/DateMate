@@ -4,6 +4,35 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D18 — Đối chiếu rulebook theo dòng lúc chạy: tham số đọc lại, định nghĩa đổi thì abstain (2026-11-07)
+- **Bối cảnh:**
+  - D16 bước 3: phải dùng rulebook của đúng split. Bảng kê `docs/RULEBOOK_PARAMS.md` cho thấy mới đọc lúc chạy được
+    4 tham số. Khoảng 35 dòng định nghĩa (doanh thu, đơn hợp lệ, nợ, kho…) đặt cứng trong executor.
+  - Rulebook khác train mà executor vẫn tính theo train thì ra câu sai tự tin (−1). Public đã thêm ngành mới và luật
+    mới (EXPERIMENTS 04/11); private chắc chắn có rulebook riêng.
+- **Lựa chọn:** `datamate/rulebook.py` tách rulebook split thành dòng luật (mỗi dòng bảng là một dòng; phần văn xuôi
+  của mỗi mục là một dòng), so với chỉ mục sinh từ rulebook train (`rulebook_index.json`, chỉ có hash và mã `§m.k`,
+  không có chữ):
+  - Trùng hash nguyên văn đã chuẩn hoá → luật không đổi.
+  - Chỉ trùng **khuôn** (số và tên thứ thay bằng ký hiệu), dòng là tham số (ca, Tết, đầu tuần) → đọc giá trị mới.
+  - Khác, hoặc dòng train bị mất → **chặn phạm vi của dòng đó**: theo op, theo filter (ca, size, kê đơn…) hoặc theo
+    loại kỳ (`week`, `last_n`, `tet`…). Intent chạm phạm vi thì abstain, log ghi mã dòng.
+  - Dòng mới (khoá không có trong train) → các cụm từ của dòng không xuất hiện ở đâu trong rulebook train (khoá, chữ
+    in đậm) thành từ khoá. Câu hỏi chứa từ khoá thì abstain.
+  - Mục toàn cục (§0 mở đầu, §7 không trả lời được, §8 cách ghi file, §9 format, phần giới thiệu §6): đổi thì **chỉ
+    ghi log**, không chặn.
+- **Lý do:**
+  - Precision trước (D11, D16 mục 4): sai do lệch luật là lỗi tự tin, không gate nào khác bắt được.
+  - Chặn theo phạm vi hẹp (op/filter/loại kỳ) thay vì cả mục, để một dòng đổi không xoá cả hệ thống.
+  - Mục toàn cục chỉ ghi log vì chặn chúng nghĩa là abstain toàn bộ. Ingest có bất biến riêng (D11), format do code
+    `answer/` giữ.
+  - Suy hoàn toàn từ rulebook train và rulebook của split lúc chạy, không nhìn rulebook public.
+- **Hệ quả:**
+  - Đổi chữ vô hại (sửa chính tả) trong một dòng định nghĩa sẽ làm abstain thêm, không làm sai.
+  - Dòng mới định nghĩa lại bằng từ đã có trong train (không có cụm từ mới) thì không bắt được: ghi số dòng như vậy vào log.
+  - Đổi rulebook train (khi BTC cập nhật) phải chạy lại `analysis/build_rulebook_index.py`; test kiểm chỉ mục khớp.
+  - Sau này các câu bị chặn là ứng viên cho nhánh LLM/code-gen có rulebook trong context.
+
 ### D17 — Pin vLLM 0.10.1.1 (base Docker Guide) và numpy 2.2.6 (2026-11-07)
 - **Bối cảnh:**
   - D16 yêu cầu bản vLLM của máy GPU thành viên khớp base image `vllm/vllm-openai:v0.10.1.1`. Runbook cũ để

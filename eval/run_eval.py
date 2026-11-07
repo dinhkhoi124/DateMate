@@ -35,6 +35,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="dev", choices=["dev", "holdout", "all"])
     ap.add_argument("--by", default="intent", choices=["intent", "shop", "type", "source"])
+    ap.add_argument("--rulebook", help="use this rulebook.md instead of the split's (synthetic-rulebook tests, D18)")
     ap.add_argument("--errors", type=int, default=0, help="print N wrong answers (never for holdout)")
     ap.add_argument("--only", nargs="*", help="restrict to business_ids (dev only)")
     ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
@@ -54,7 +55,7 @@ def main():
             sys.exit("--only is not allowed on holdout")
         qs = [q for q in qs if q["business_id"] in set(args.only)]
 
-    ctx = Context(root=TRAIN, llm=make_llm(args.llm, args.llm_model, args.llm_replay))
+    ctx = Context(root=TRAIN, llm=make_llm(args.llm, args.llm_model, args.llm_replay), rulebook=args.rulebook)
     preds, sources, t0 = [], {}, time.time()
     for q in qs:
         try:

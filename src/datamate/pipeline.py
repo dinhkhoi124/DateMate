@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from datamate.config import DEFAULT, Rules, from_rulebook
+from datamate.config import Rules
 from datamate.execute.dispatch import run
 from datamate.execute.facts import facts_of
 from datamate.execute.ops import Abstain, Unanswerable
@@ -17,6 +17,8 @@ from datamate.normalize.text import normalize, normalize_pair
 from datamate.parse.ensemble import decide, needs_llm
 from datamate.parse.gate import load_vocab, residual, unknown
 from datamate.parse.rules import RuleParser
+from datamate.rulebook import RulebookDiff, fold
+from datamate.rulebook import analyse as analyse_rulebook
 from datamate.timeparse.periods import LunarCalendar, find_periods
 
 
@@ -33,12 +35,17 @@ class Context:
     vocab: frozenset = None
     trace: dict = None                                # id -> residual words, filled when not None
     llm: object = None                                # parse.llm.LLMParser (D14); None = rule-only
+    rulebook: Path = None                             # override <root>/rulebook.md (synthetic-rulebook tests)
+    rb: RulebookDiff = None                           # D18 diff of the split's rulebook vs train
 
     def __post_init__(self):
         if self.vocab is None:
             self.vocab = load_vocab()
-        rb = self.root / "rulebook.md"
-        self.rules = from_rulebook(rb.read_text(encoding="utf8")) if rb.exists() else DEFAULT
+        rb = Path(self.rulebook) if self.rulebook else self.root / "rulebook.md"
+        self.rb = analyse_rulebook(rb.read_text(encoding="utf8") if rb.exists() else None)
+        self.rules = self.rb.rules
+        if self.rb.changed or self.rb.missing or self.rb.new_rows:   # counts only, never rulebook text
+            print(f"[datamate] {self.rb.summary()}", file=sys.stderr)
         self.cal = LunarCalendar.load(str(self.root / "calendar.csv"))
 
     def store(self, biz: str) -> Store:
@@ -102,6 +109,10 @@ def analyse(q: dict, ctx: Context):
         if unk:
             it.note = "gate: " + " ".join(unk)
             return it, t, abstain(q["id"])
+    why = ctx.rb.block_reason(it, fold(q["question"]))
+    if why:   # D18: the split's rulebook changed a rule this intent relies on, or adds a rule it mentions
+        it.note = why
+        return it, t, abstain(q["id"])
     if ctx.checks:
         bad = blocking(it.op, ctx.violations(q["business_id"]))
         if bad:   # D11: the data this op reads failed a run-time invariant -> not enough evidence to answer
