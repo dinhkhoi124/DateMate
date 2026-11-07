@@ -63,7 +63,7 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
    - [x] Sinh lại public (`eval/runs/public_v0.4`, 57d2d2f): vẫn **107 câu** abstain do không có bảng đơn, cùng 2 shop như v0.2/v0.3 (số 214 cũ đếm trùng). Loại câu trả lời y hệt v0.3 (abstain 690), 21 câu đổi giá trị. Các sửa ingest từ proxy chưa chạm tới 2 shop này
    - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
 3. - [ ] **Ưu tiên ngang LLM (D16): đọc rulebook lúc chạy.** Đề yêu cầu dùng rulebook của đúng split (SPEC §7.1). Không xem rulebook public để định hướng code
-   - [ ] Liệt kê tham số luật đang đặt cứng từ rulebook train (ca, đầu tuần, Tết, định nghĩa doanh thu/đơn hợp lệ…), mỗi tham số gắn mục rulebook
+   - [x] Liệt kê tham số luật đang đặt cứng từ rulebook train, mỗi luật gắn mục rulebook và op chịu ảnh hưởng: `docs/RULEBOOK_PARAMS.md` (07/11). Đọc lúc chạy mới 4 tham số (ca, Tết); P✗: đầu tuần, phí phục vụ, size, quá/từ N, N ngày, tuổi nợ, làm tròn. Đề xuất đối chiếu rulebook theo dòng (hash), luật định nghĩa đổi thì abstain op liên quan: chờ duyệt
    - [ ] Parser rulebook theo cấu trúc rulebook train → config lúc chạy; không đọc được thì giữ mặc định train và ghi note vào log
    - [ ] Rulebook tổng hợp (đổi tham số trên shop dev) + đáp án tính lại → đo đúng/sai; dev và holdout không giảm
    - [ ] Nộp public bản có đọc rulebook (milestone)
