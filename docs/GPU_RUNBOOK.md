@@ -1,7 +1,7 @@
 # GPU RUNBOOK — Chạy LLM parser trên máy GPU của thành viên
 
 Người chạy: thành viên có GPU NVIDIA. Người nhận kết quả: lead (Khôi). Quyết định liên quan: `DECISIONS.md` D14, D15, D17 (pin vLLM).
-Thời gian dự kiến: **3–6 giờ máy chạy** cho cả 8B và 14B (model gọi từng câu, ~4000 câu mỗi model, 14B chiếm phần lớn),
+Thời gian dự kiến: **3,5–7 giờ máy chạy** cho cả 8B và 14B (model gọi từng câu, ~4000 câu mỗi model, 14B chiếm phần lớn),
 ~30 phút thao tác. Nên bắt đầu buổi tối hoặc chạy qua đêm. Hạn: **10/11** (để kịp calibrate và đóng image trước 12/11).
 
 ## 0. Bạn cần làm gì, gửi lại gì
@@ -144,7 +144,8 @@ bash scripts/gpu/run_all.sh models/Qwen3-8B models/Qwen3-14B
 Có biến môi trường ở bảng mục 2 thì đặt trước lệnh, ví dụ `DATAMATE_LLM_TP=2 bash scripts/gpu/run_all.sh ...`.
 Chạy trong `tmux` hoặc `nohup` để tắt terminal không làm dừng.
 
-Với mỗi model, script chạy: smoke → dev (24 shop) → holdout (6 shop, chỉ ra số tổng) → public (sinh submission).
+Với mỗi model, script chạy: smoke → dev (24 shop) → holdout (6 shop, chỉ ra số tổng) → hiệu chỉnh luật (dev 8 shop × 2
+rulebook tổng hợp, bước `judge_cosmetic` / `judge_semantic`, ~10–20 phút) → public (sinh submission).
 Model được gọi trên **mọi** câu (`DATAMATE_LLM_CALL_ALL=1`) để lead thử được mọi chính sách ensemble trên CPU mà
 không cần chạy lại GPU. Câu trả lời cuối vẫn theo chính sách mặc định, nên bảng PA trong summary là PA thật.
 

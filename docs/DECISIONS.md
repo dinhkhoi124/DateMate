@@ -4,6 +4,43 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D19 — Rule judge: model chỉ xác nhận luật của split tương đương phép tính đang chạy (2026-11-07)
+- **Bối cảnh:**
+  - D18 chặn 995/1000 câu public. Nhánh LLM hiện tại chỉ sinh intent, còn executor vẫn tính theo nghĩa train. Vì
+    vậy, đưa chữ luật vào prompt intent không sửa được đáp án khi luật thật sự đổi.
+  - Một số câu bị chặn có thể không bị ảnh hưởng, ví dụ chỉ đổi câu chữ. Số câu như vậy chưa đo được.
+- **Lựa chọn:** `parse/rule_judge.py`, **mặc định tắt** (`DATAMATE_LLM_RULE_JUDGE=1` mới bật).
+  - Với mỗi dòng luật chạm câu hỏi, dựng **một prompt riêng**, gồm:
+    - phép tính sẽ chạy (op, bộ lọc, kỳ);
+    - cách hệ thống đang tính (`rulebook_impl.IMPL`, câu chữ của ta mô tả executor theo train);
+    - chữ của dòng đó trong rulebook split (đọc lúc chạy, đủ mọi cột, chỉ giữ trong bộ nhớ, không ghi log);
+    - câu hỏi.
+  - `same` chỉ khi luật của split, áp vào **đúng phép tính này cho câu hỏi này**, tính giống hệt executor: cùng tập
+    đơn/dòng, cùng khoản cộng trừ, cùng điều kiện, cùng cách đếm và làm tròn. Prompt cấm coi là `same` chỉ vì câu hỏi
+    không nhắc tới phần bị đổi. Dòng mới: `same` chỉ khi luật mới không đổi bước nào của phép tính.
+  - **Fail-closed:** chỉ trả lời khi mọi dòng × mọi mẫu (đủ `n_samples`, tối thiểu `judge_min_votes`) đều parse được
+    và là `same`. Các trường hợp sau đều abstain, không quay về đáp án rule:
+    - `different`, `unsure`, JSON sai hoặc ngoài enum;
+    - thiếu mẫu, backend lỗi, replay miss, exception;
+    - dòng train bị mất: không có định nghĩa để so, nên không gọi model.
+  - Thống kê tách `same / different / unsure / invalid / missing_row / failed`. `failed` là không có đầu ra model, không
+    phải verdict.
+  - Hiệu chỉnh: `eval/synth/rulebooks.py` sinh lúc chạy từ train (câu thêm là câu tự viết) hai biến thể trên 5 dòng
+    (§1.5, §1.6, §2.7, §3.3, §4.2): `cosmetic` thêm câu trung tính, kỳ vọng `same`; `semantic` thêm ngoại lệ đổi nghĩa,
+    kỳ vọng không `same`. `run_all.sh` chạy trên 8 shop dev, dùng lại replay dev, có bật judge.
+- **Lý do:**
+  - Model không tính số (CLAUDE.md luật 4). Nó chỉ xác nhận đáp án deterministic còn đúng nghĩa không. Mọi nghi ngờ
+    đều dẫn tới abstain.
+  - Một prompt cho mỗi dòng, để một dòng an toàn không che một dòng không an toàn trong cùng verdict.
+  - Mặc định tắt cho tới khi đo bằng suy luận thật.
+- **Hệ quả:**
+  - Câu luật thật sự đổi vẫn abstain; cần code-gen có rulebook trong context (bước 5 PLAN) mới trả lời được.
+  - Rủi ro chính là model nói `same` sai. False-pass đo bằng `judge_same` trên `semantic`, không đọc từ PA, vì gold
+    vẫn theo train. Chỉ bật trong image khi con số này gần 0.
+  - Kết quả CPU (backend giả, replay rỗng) chỉ kiểm đường đi, **không phải độ chính xác của LLM**.
+  - Đổi `IMPL` hoặc prompt judge thì replay judge cũ không dùng được (khoá theo prompt), phải chạy GPU lại.
+  - Không có chữ rulebook nào của split khác train trong source hay few-shot. Judge không có few-shot.
+
 ### D18 — Đối chiếu rulebook theo dòng lúc chạy: tham số đọc lại, định nghĩa đổi thì abstain (2026-11-07)
 - **Bối cảnh:**
   - D16 bước 3: phải dùng rulebook của đúng split. Bảng kê `docs/RULEBOOK_PARAMS.md` cho thấy mới đọc lúc chạy được

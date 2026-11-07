@@ -103,6 +103,8 @@ def main():
             print(f"{q['business_id']} {q['as_of_date']} | {q['question']}\n   pred={json.dumps(p, ensure_ascii=False)[:160]}\n   gold={json.dumps({'type': g['type'], 'answer': g['answer']}, ensure_ascii=False)[:160]}")
     if ctx.llm is not None:
         print(ctx.llm.stats_line())
+    if ctx.judge is not None:
+        print(ctx.judge.stats_line())
     print(f"\nrun dir: {run_dir.relative_to(ROOT)}")
 
 

@@ -37,6 +37,7 @@ class Context:
     llm: object = None                                # parse.llm.LLMParser (D14); None = rule-only
     rulebook: Path = None                             # override <root>/rulebook.md (synthetic-rulebook tests)
     rb: RulebookDiff = None                           # D18 diff of the split's rulebook vs train
+    judge: object = None                              # parse.rule_judge.RuleJudge (D18 branch 3), from `llm`
 
     def __post_init__(self):
         if self.vocab is None:
@@ -47,6 +48,9 @@ class Context:
         if self.rb.changed or self.rb.missing or self.rb.new_rows:   # counts only, never rulebook text
             print(f"[datamate] {self.rb.summary()}", file=sys.stderr)
         self.cal = LunarCalendar.load(str(self.root / "calendar.csv"))
+        if self.judge is None and self.llm is not None and self.llm.cfg.rule_judge:
+            from datamate.parse.rule_judge import RuleJudge  # noqa: PLC0415
+            self.judge = RuleJudge(self.llm.backend, self.llm.cfg)
 
     def store(self, biz: str) -> Store:
         if biz not in self.stores:
@@ -109,10 +113,21 @@ def analyse(q: dict, ctx: Context):
         if unk:
             it.note = "gate: " + " ".join(unk)
             return it, t, abstain(q["id"])
-    why = ctx.rb.block_reason(it, fold(q["question"]))
+    folded = fold(q["question"])
+    why = ctx.rb.block_reason(it, folded)
     if why:   # D18: the split's rulebook changed a rule this intent relies on, or adds a rule it mentions
+        ok = False   # fail closed: no judge, judge error or any non-'same' -> abstain, never the rule answer
+        if ctx.judge is not None:   # D19: the model decides whether the split's rule computes what the executor does
+            try:
+                ok, raw = ctx.judge.judge(q["question"], it, ctx.rb.hits(it, folded), ctx.rb)
+            except Exception as e:  # noqa: BLE001
+                ok, raw = False, []
+                why += f"; judge error {type(e).__name__}"
+            it.llm_raw = (it.llm_raw or []) + raw
+            why += "; judge " + ("same" if ok else "not same")
         it.note = why
-        return it, t, abstain(q["id"])
+        if not ok:
+            return it, t, abstain(q["id"])
     if ctx.checks:
         bad = blocking(it.op, ctx.violations(q["business_id"]))
         if bad:   # D11: the data this op reads failed a run-time invariant -> not enough evidence to answer

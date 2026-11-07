@@ -77,6 +77,8 @@ def main(argv=None) -> int:
     print(f"[datamate] {len(qs)} questions in {time.time() - t0:.1f}s -> {out}", file=sys.stderr)
     if ctx.llm is not None:
         print(ctx.llm.stats_line(), file=sys.stderr)
+    if ctx.judge is not None:
+        print(ctx.judge.stats_line(), file=sys.stderr)
     return 0
 
 

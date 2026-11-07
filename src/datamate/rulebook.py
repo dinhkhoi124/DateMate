@@ -177,6 +177,7 @@ class Row:
     text: str         # folded row text
     phrases: list     # folded key + bold phrases (new-row keywords)
     line: int         # 1-based line in the file (tests mutate rows through it)
+    raw: str = ""     # the split's own wording (rule judge prompt, D18 branch 3); kept in memory, never logged
 
 
 _HEAD = re.compile(r"^(#{1,3})\s+(.*)$")
@@ -195,7 +196,8 @@ def parse_rows(md: str) -> list[Row]:
             if text:
                 pn += 1
                 rid = f"§{sec_no}" + (f"[{sub}]" if sub else "") + f".p{pn}"
-                rows.append(Row(rid, f"prose:{sec_title}|{sub}|{pn}", text, [], prose[0][0]))
+                rows.append(Row(rid, f"prose:{sec_title}|{sub}|{pn}", text, [], prose[0][0],
+                                " ".join(p for _, p in prose)))
             prose.clear()
 
     lines = md.splitlines()
@@ -224,7 +226,8 @@ def parse_rows(md: str) -> list[Row]:
             rid = f"§{sec_no}" + (f"[{sub}]" if sub else "") + f".{k}"
             bold = re.findall(r"\*\*(.+?)\*\*", s)
             rows.append(Row(rid, fold(cells[0]), fold(" ".join(cells)),
-                            [p for p in dict.fromkeys([fold(cells[0])] + [fold(b) for b in bold]) if p], i + 1))
+                            [p for p in dict.fromkeys([fold(cells[0])] + [fold(b) for b in bold]) if p], i + 1,
+                            unicodedata.normalize("NFC", " | ".join(c.replace("**", "") for c in cells))))
             continue
         if s:
             prose.append((i + 1, s))
@@ -258,26 +261,35 @@ class RulebookDiff:
     new_rows: int = 0
     unmapped_new_rows: int = 0                       # new rows without a train-unseen phrase
     keywords: list = field(default_factory=list)     # folded phrases from new rows
+    kw_rows: dict = field(default_factory=dict)      # keyword -> ids of the new rows it came from ("new:§m.k")
+    texts: dict = field(default_factory=dict)        # row id -> split wording, for changed and new rows (memory only)
 
     def summary(self) -> str:
         return (f"rulebook: {len(self.changed)} changed, {len(self.missing)} missing, {len(self.params)} params "
                 f"re-read, {len(self.reported)} global changed (log only), {self.new_rows} new rows "
                 f"({len(self.keywords)} keywords, {self.unmapped_new_rows} unmapped), {len(self.blocked)} scopes blocked")
 
-    def block_reason(self, it, folded_question: str) -> str | None:
-        """Why this intent/question must abstain (None = fine)."""
+    def hits(self, it, folded_question: str) -> list[str]:
+        """Rule rows this intent/question touches: changed or missing train rows by scope, new rows by keyword."""
         hits = set(self.blocked.get(it.op, []))
         for k, v in (it.flt or {}).items():
             if v is not None:
                 hits.update(self.blocked.get(f"[{k}]", []))
         for p in it.periods or []:
             hits.update(self.blocked.get(f"period:{p.kind}", []))
-        if hits:
-            return "rulebook changed: " + ", ".join(sorted(hits))
         q = f" {folded_question} "
-        if any(f" {kw} " in q for kw in self.keywords):
-            return "rulebook new rule"
-        return None
+        for kw in self.keywords:
+            if f" {kw} " in q:
+                hits.update(self.kw_rows[kw])
+        return sorted(hits)
+
+    def block_reason(self, it, folded_question: str) -> str | None:
+        """Why this intent/question must abstain (None = fine). Logs carry row ids only, never rulebook text."""
+        h = self.hits(it, folded_question)
+        old = [r for r in h if not r.startswith("new:")]
+        if old:
+            return "rulebook changed: " + ", ".join(old)
+        return "rulebook new rule" if h else None
 
 
 def _in_train(phrase: str, train_ngrams: set) -> bool:
@@ -320,6 +332,9 @@ def analyse(md: str | None, index: dict | None = None) -> RulebookDiff:
             kws = [p for p in r.phrases if len(p) >= 4 and not p.isdigit() and not _in_train(p, train_ngrams)]
             if kws:
                 d.keywords.extend(kws)
+                d.texts[f"new:{r.rid}"] = r.raw
+                for kw in kws:
+                    d.kw_rows.setdefault(kw, set()).add(f"new:{r.rid}")
             else:
                 d.unmapped_new_rows += 1
             continue
@@ -328,6 +343,7 @@ def analyse(md: str | None, index: dict | None = None) -> RulebookDiff:
         if _h(r.text) == ent["text"]:
             continue
         d.changed.append(rid)
+        d.texts[rid] = r.raw
         parse = PARAMS.get(rid)
         if parse is not None and _h(template(r.text)) == ent["tmpl"]:
             new = parse(r.text, rules)
@@ -343,4 +359,5 @@ def analyse(md: str | None, index: dict | None = None) -> RulebookDiff:
     d.rules = rules
     d.blocked = {k: sorted(v) for k, v in sorted(blocked.items())}
     d.keywords = sorted(set(d.keywords))
+    d.kw_rows = {k: sorted(v) for k, v in sorted(d.kw_rows.items())}
     return d

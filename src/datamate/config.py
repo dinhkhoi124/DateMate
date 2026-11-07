@@ -61,7 +61,8 @@ INVARIANTS = Invariants()
 class LLMConfig:
     """LLM parser + ensemble (DECISIONS D14). backend 'off' = rule-only pipeline, unchanged behaviour.
     Env: DATAMATE_LLM (off|vllm|replay), DATAMATE_LLM_MODEL (local weights dir), DATAMATE_LLM_REPLAY (jsonl),
-    DATAMATE_LLM_SAMPLES, DATAMATE_LLM_MODEL_ID, DATAMATE_LLM_CALL_ALL, DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}."""
+    DATAMATE_LLM_SAMPLES, DATAMATE_LLM_MODEL_ID, DATAMATE_LLM_CALL_ALL, DATAMATE_LLM_RULE_JUDGE (1 = on),
+    DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}."""
     backend: str = "off"
     model_path: str = ""
     model_id: str = ""                      # cache key part; defaults to the weights dir name
@@ -83,6 +84,11 @@ class LLMConfig:
     llm_only_min_votes: int = 3
     # record mode (D15): call the model on every question so a replay covers every policy; decisions unchanged
     call_all: bool = False
+    # rule judge (D18 branch 3, D19, parse/rule_judge.py): an intent blocked by a rulebook change is answered only when
+    # every sample says the split's rule computes exactly what the executor computes. OFF until calibrated (D19):
+    # DATAMATE_LLM_RULE_JUDGE=1 turns it on (scripts/gpu/run_all.sh records with it on)
+    rule_judge: bool = False
+    judge_min_votes: int = 1
 
     def __post_init__(self):
         if self.chat_template_kwargs is None:
@@ -106,6 +112,8 @@ class LLMConfig:
                 env[field] = typ(os.environ[var])
         if os.environ.get("DATAMATE_LLM_CALL_ALL", "") not in ("", "0"):
             env["call_all"] = True
+        if os.environ.get("DATAMATE_LLM_RULE_JUDGE", "") not in ("", "0"):
+            env["rule_judge"] = True
         return cls(**{**env, **kw})
 
 
