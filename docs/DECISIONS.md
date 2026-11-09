@@ -122,6 +122,9 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   - Kernel FP8 cho 14B trên 5090 (sm120) ở 0.10.1.1 chưa được kiểm. Nếu lỗi thì dùng TP=2 BF16 (máy chấm có 2 card)
     hoặc AWQ.
   - Image vLLM dùng Python 3.12, `.venv` dev dùng 3.11. Phải so container với local như đã làm với bản rule-only.
+  - (09/11) Pin thêm `transformers==4.55.4`: cài vLLM 0.10.1.1 vào môi trường mới kéo transformers 5.x, bản này bỏ
+    `all_special_tokens_extended` nên vLLM chết lúc load tokenizer (gặp trên Kaggle). Khi build `Dockerfile.llm` phải so
+    bản transformers của base image với pin này. Kaggle kernel là Python 3.13: chạy trong venv 3.12 (`uv`).
 
 ### D16 — Public là thước đo khả thi; đọc rulebook lúc chạy lên đầu; giữ GPU cho vòng private (2026-11-07)
 - **Bối cảnh:**

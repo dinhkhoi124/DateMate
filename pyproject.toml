@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "tqdm", "ruff==0.14.4", "pre-commit"]
-llm = ["vllm==0.10.1.1"]  # D17: same as the Docker Guide base image vllm/vllm-openai:v0.10.1.1
+llm = ["vllm==0.10.1.1", "transformers==4.55.4"]  # D17: same as the Docker Guide base image vllm/vllm-openai:v0.10.1.1
 
 [build-system]
 requires = ["setuptools>=68"]
