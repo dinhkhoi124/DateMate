@@ -28,6 +28,7 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 
 **10/11**
 - [ ] Notebook Kaggle (private dataset = train): vLLM + model ≤ 15B bản 4-bit, chạy agent trên 100–200 câu dev
+   - [x] (09/11) `scripts/kaggle/datamate_dev.ipynb` + `docs/KAGGLE.md`, `run_eval --per-shop/--trace`, `eval/calibrate_agent.py` (re-vote m × policy trên CPU). Chưa chạy trên Kaggle
 - [ ] Chọn model: 2–3 ứng viên ≤ 15B (ngày public < 26/10/2026, license) trên cùng 100 câu dev: PA, precision, giây/câu
 
 **11/11 — Go/no-go**

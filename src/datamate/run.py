@@ -64,7 +64,9 @@ def main(argv=None) -> int:
     except Exception:  # model failed to load (no GPU, OOM...): run the measured rule-only system, never crash (D14)
         print(f"[datamate] LLM disabled, rule-only run:\n{traceback.format_exc(limit=3)}", file=sys.stderr)
         llm = None
-    ctx = Context(root=root, llm=llm, agent=make_agent(llm, root, enabled=args.agent == "codegen" if args.agent else None))
+    agent = make_agent(llm, root, enabled=args.agent == "codegen" if args.agent else None)
+    # D20: with the agent, the rule side stays pure rule (no D14 LLM parser/judge); the model serves the agent only
+    ctx = Context(root=root, llm=None if agent else llm, agent=agent)
     with open(root / "questions.jsonl", encoding="utf8") as f:
         qs = [json.loads(l) for l in f if l.strip()]
     if args.only:

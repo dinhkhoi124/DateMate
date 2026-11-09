@@ -42,6 +42,9 @@ def main():
     ap.add_argument("--llm-model", help="local weights dir")
     ap.add_argument("--llm-replay", help="replay/record jsonl")
     ap.add_argument("--agent", choices=["off", "codegen"], help="code-gen agent, D20 (default: $DATAMATE_AGENT or off)")
+    ap.add_argument("--per-shop", type=int, default=0,
+                    help="keep the first N questions of each shop by id (deterministic subsample for GPU runs)")
+    ap.add_argument("--trace", action="store_true", help="write trace.jsonl (code, samples, votes) to the run dir")
     args = ap.parse_args()
 
     holdout = set(json.loads((ROOT / "eval" / "splits.json").read_text(encoding="utf8"))["holdout"])
@@ -55,14 +58,23 @@ def main():
         if args.split == "holdout":
             sys.exit("--only is not allowed on holdout")
         qs = [q for q in qs if q["business_id"] in set(args.only)]
+    if args.per_shop:
+        keep, seen = set(), defaultdict(int)
+        for q in sorted(qs, key=lambda q: q["id"]):
+            if seen[q["business_id"]] < args.per_shop:
+                seen[q["business_id"]] += 1
+                keep.add(q["id"])
+        qs = [q for q in qs if q["id"] in keep]
 
     llm = make_llm(args.llm, args.llm_model, args.llm_replay)
     agent = make_agent(llm, TRAIN, args.rulebook, enabled=args.agent == "codegen" if args.agent else None)
-    ctx = Context(root=TRAIN, llm=llm, rulebook=args.rulebook, agent=agent)
-    preds, sources, t0 = [], {}, time.time()
+    ctx = Context(root=TRAIN, llm=None if agent else llm, rulebook=args.rulebook, agent=agent)   # D20: rule side pure
+    preds, sources, traces, t0 = [], {}, {}, time.time()
     for q, row, tr in answer_many(qs, ctx):   # never raises per question (abstain + error in trace)
         preds.append(row)
         sources[q["id"]] = (tr.get("inputs") or {}).get("source", "-")
+        if args.trace:
+            traces[q["id"]] = tr
     elapsed = time.time() - t0
 
     gl = [golds[q["id"]] for q in qs]
@@ -87,6 +99,12 @@ def main():
     with open(run_dir / "submission.jsonl", "w", encoding="utf8") as f:
         for p in preds:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
+    if args.trace:   # train questions only (gitignored run dir); eval/calibrate_agent.py reads it on CPU
+        with open(run_dir / "trace.jsonl", "w", encoding="utf8") as f:
+            for q in qs:
+                tr = {k: v for k, v in traces.get(q["id"], {}).items() if k != "_t0"}
+                f.write(json.dumps({"id": q["id"], "business_id": q["business_id"], "row": pm.get(q["id"]),
+                                    **tr}, ensure_ascii=False, default=str) + "\n")
     (run_dir / "report.json").write_text(json.dumps({"summary": summary, "by": {k: v for k, v in groups.items()}},
                                                     ensure_ascii=False, indent=1), encoding="utf8")
 
