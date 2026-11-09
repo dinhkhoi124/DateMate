@@ -26,6 +26,21 @@ Quy tắc bắt buộc:
   thay vì tự tính, trừ khi rulebook định nghĩa khác.
 - Chỉ import: pandas, numpy, math, datetime, re, collections, itertools, statistics, unicodedata, calendar.
 
+Lưu ý khi viết code:
+- T và H là tham số của solve: KHÔNG `import H` hay `import T`. pd, np, date đã có sẵn.
+- Đầu hàm solve, viết vài dòng comment nêu mục rulebook áp dụng (đơn nào được tính, tính tiền theo cột nào,
+  đơn vị, kỳ thời gian) rồi mới viết code theo đúng các mục đó.
+- So sánh cột chữ (status, payment_method, category, unit…) phải dùng ĐÚNG giá trị liệt kê ở "values" trong schema,
+  không tự đoán cách viết. raw_status là chữ gốc trong file; ánh xạ sang status đã làm sẵn.
+- Cột date (datetime.date) so trực tiếp với period["start"], period["end"]; lọc kỳ nên dùng H.in_period(series, p).
+  Không dùng between(..., inclusive=True) (pandas 3 chỉ nhận "both", "neither", "left", "right").
+- Tìm sản phẩm/khách/nhóm hàng trong câu hỏi: gọi H.find_products(), H.find_customers(), H.find_categories()
+  KHÔNG truyền đối số. Lọc bảng theo cột product_key / customer_id / category bằng key trả về.
+- Mọi giá trị tiền, kể cả trung bình tiền mỗi đơn hay giá bình quân, trả qua H.money.
+- Số lượng theo đơn vị cơ sở là qty_base (= qty × factor). Câu hỏi theo đơn vị khác (thùng, hộp, vỉ…) thì đổi
+  bằng factor trong T['units'] của đúng sản phẩm.
+- Nếu sau khi lọc không còn dòng nào mà câu hỏi kỳ vọng có dữ liệu, trả {"type": "abstain"} thay vì 0.
+
 Trả lời bằng đúng một khối ```python ... ``` chứa hàm solve (có thể kèm hàm phụ). Không giải thích ngoài khối code."""
 
 HELPER_DOC = """API của H (đã cài đúng rulebook mục thời gian và làm tròn):

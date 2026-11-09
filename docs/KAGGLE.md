@@ -28,8 +28,18 @@ unzip datamate_dev_<model>.zip -d eval/runs/kaggle_<model>
 PYTHONPATH=src .venv/Scripts/python eval/calibrate_agent.py eval/runs/kaggle_<model>/<run>_dev/trace.jsonl
 ```
 
-Trace có đủ code, đầu ra từng mẫu và đáp án rule, nên đổi m/policy không cần GPU. Đổi prompt hoặc helper thì
-phải chạy lại GPU (khoá replay gồm prompt).
+Trace có đủ code, đầu ra từng mẫu và đáp án rule, nên đổi m/policy không cần GPU. Sửa sandbox, helper hoặc bảng T
+thì chạy lại code đã ghi trên CPU, rồi calibrate trên trace mới:
+
+```bash
+PYTHONPATH=src .venv/Scripts/python eval/reexec_agent.py eval/runs/kaggle_<model>/<run>_dev/trace.jsonl
+PYTHONPATH=src .venv/Scripts/python eval/calibrate_agent.py eval/runs/kaggle_<model>/<run>_dev/trace_reexec.jsonl
+```
+
+Đổi prompt (kể cả schema hiển thị trong prompt) thì phải chạy lại GPU (khoá replay gồm prompt). Đọc dòng
+**code-gen một mình** (policy `codegen`): trên public, rule bị D18 chặn gần hết nên đó mới là điểm thật của agent.
+
+`THINKING = True` bật thinking mode của Qwen3 (đặt `MAX_TOKENS = 6144`). Khoá replay và tên zip có hậu tố `-think`.
 
 ## Chọn model
 

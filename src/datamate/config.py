@@ -62,7 +62,8 @@ class LLMConfig:
     """LLM parser + ensemble (DECISIONS D14). backend 'off' = rule-only pipeline, unchanged behaviour.
     Env: DATAMATE_LLM (off|vllm|replay), DATAMATE_LLM_MODEL (local weights dir), DATAMATE_LLM_REPLAY (jsonl),
     DATAMATE_LLM_SAMPLES, DATAMATE_LLM_MODEL_ID, DATAMATE_LLM_CALL_ALL, DATAMATE_LLM_RULE_JUDGE (1 = on),
-    DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}, DATAMATE_LLM_PREFIX_CACHE (0 = off)."""
+    DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}, DATAMATE_LLM_PREFIX_CACHE (0 = off),
+    DATAMATE_LLM_THINKING (1 = Qwen3 enable_thinking)."""
     backend: str = "off"
     model_path: str = ""
     model_id: str = ""                      # cache key part; defaults to the weights dir name
@@ -112,6 +113,8 @@ class LLMConfig:
                                 ("DATAMATE_LLM_MAX_LEN", "max_model_len", int)):
             if os.environ.get(var):
                 env[field] = typ(os.environ[var])
+        if os.environ.get("DATAMATE_LLM_THINKING", "") not in ("", "0"):   # Qwen3 reasoning mode (code-gen A/B)
+            env["chat_template_kwargs"] = {"enable_thinking": True}
         if os.environ.get("DATAMATE_LLM_PREFIX_CACHE", "") == "0":
             env["prefix_caching"] = False
         if os.environ.get("DATAMATE_LLM_CALL_ALL", "") not in ("", "0"):
@@ -124,7 +127,7 @@ class LLMConfig:
 @dataclass(frozen=True)
 class AgentConfig:
     """Code-gen agent (D20, ARCHITECTURE §8). Env: DATAMATE_AGENT (off|codegen), DATAMATE_AGENT_{SAMPLES,MIN_VOTES,
-    POLICY,TIMEOUT}. The model/backend itself comes from LLMConfig (DATAMATE_LLM*)."""
+    POLICY,TIMEOUT,MAX_TOKENS}. The model/backend itself comes from LLMConfig (DATAMATE_LLM*)."""
     enabled: bool = False
     n_samples: int = 5                  # k samples per question (temperature from LLMConfig)
     min_votes: int = 4                  # answer only when >= m samples give the same canonical answer
@@ -139,7 +142,8 @@ class AgentConfig:
     def from_env(cls, **kw) -> "AgentConfig":
         env: dict = {"enabled": os.environ.get("DATAMATE_AGENT", "off") == "codegen"}
         for var, fld, typ in (("DATAMATE_AGENT_SAMPLES", "n_samples", int), ("DATAMATE_AGENT_MIN_VOTES", "min_votes", int),
-                              ("DATAMATE_AGENT_POLICY", "policy", str), ("DATAMATE_AGENT_TIMEOUT", "timeout_s", float)):
+                              ("DATAMATE_AGENT_POLICY", "policy", str), ("DATAMATE_AGENT_TIMEOUT", "timeout_s", float),
+                              ("DATAMATE_AGENT_MAX_TOKENS", "max_tokens", int)):
             if os.environ.get(var):
                 env[fld] = typ(os.environ[var])
         return cls(**{**env, **kw})

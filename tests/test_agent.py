@@ -112,3 +112,24 @@ def test_agent_votes():
         assert "=== RULEBOOK ===" in p and p.rstrip().endswith(q["question"])
     finally:
         agent.close()
+
+
+def test_exec_solve_tolerates_import_of_params_and_strptime():
+    # Kaggle run 09/11: 118/168 sample errors were `import H`; pd.to_datetime(format=) imports _strptime lazily
+    code = ("import H\nimport pandas as pd\n"
+            "def solve(T, H):\n"
+            "    d = pd.to_datetime(pd.Series(['01/02/2025']), format='%d/%m/%Y')\n"
+            "    return {'type': 'number', 'answer': int(d.dt.month[0]) + H}\n")
+    assert exec_solve(code, {}, 1) == {"type": "number", "answer": 3}
+    with pytest.raises(ImportError):
+        exec_solve("from H import x\ndef solve(T, H):\n    return 1\n", {}, None)
+
+
+def test_schema_lists_text_values_and_drops_empty_columns():
+    import pandas as pd
+
+    from datamate.agent.tables import schema_text
+    df = pd.DataFrame({"status": pd.Series(["done", "cancelled", "done"], dtype="str"), "debt": [None] * 3})
+    df = df[[c for c in df.columns if df[c].notna().any()]]
+    s = schema_text({"orders": df})
+    assert "'done' (2) | 'cancelled' (1)" in s and "debt" not in s

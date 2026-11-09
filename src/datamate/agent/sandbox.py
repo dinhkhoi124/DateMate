@@ -10,17 +10,25 @@ from __future__ import annotations
 import builtins
 import multiprocessing as mp
 import traceback
+import types
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 SAFE_MODULES = frozenset({"math", "datetime", "re", "collections", "itertools", "functools", "statistics",
-                          "unicodedata", "decimal", "fractions", "calendar", "pandas", "numpy", "operator", "string"})
+                          "unicodedata", "decimal", "fractions", "calendar", "pandas", "numpy", "operator", "string",
+                          # pure-computation stdlib; time/_strptime are imported lazily by datetime.strptime and
+                          # pd.to_datetime(format=...) from the calling (sandboxed) frame
+                          "time", "_strptime", "json", "typing", "dataclasses", "copy", "bisect", "heapq",
+                          "numbers", "enum", "warnings", "zoneinfo", "dateutil", "pytz"})
+_PARAM_NAMES = frozenset({"H", "T"})   # models often write `import H`; solve's parameters shadow it anyway
 _BLOCKED = ("open", "exec", "eval", "compile", "input", "exit", "quit", "breakpoint", "help", "memoryview", "globals",
             "vars", "locals", "__import__")
 
 
 def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if level == 0 and name in _PARAM_NAMES and not fromlist:
+        return types.ModuleType(name)
     if level != 0 or name.split(".")[0] not in SAFE_MODULES:
         raise ImportError(f"import of {name!r} is not allowed")
     return builtins.__import__(name, globals, locals, fromlist, level)

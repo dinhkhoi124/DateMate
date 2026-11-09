@@ -18,34 +18,43 @@ MAX_ENUM = 15
 
 
 def frames_of(st) -> dict[str, pd.DataFrame]:
+    """Store frames for the model. Columns that are entirely empty are dropped: a model that picks one (e.g. an
+    unmapped `debt`) would silently sum zeros; without it the code fails and the sample is discarded."""
     T = {}
     for name in FRAMES:
         df = getattr(st, name, None)
         if df is None or not len(df):
             continue
-        cols = [c for c in df.columns if not str(c).startswith("_") or c in _KEEP_PRIVATE]
+        cols = [c for c in df.columns if (not str(c).startswith("_") or c in _KEEP_PRIVATE) and df[c].notna().any()]
         T[name] = df[cols].rename(columns=_KEEP_PRIVATE).reset_index(drop=True)
     return T
 
 
+def _is_dateish(nn: pd.Series) -> bool:
+    return pd.api.types.is_datetime64_any_dtype(nn) or isinstance(nn.iloc[0], date)
+
+
 def _col_doc(s: pd.Series) -> str:
-    kind = str(s.dtype)
     nn = s.dropna()
     if not len(nn):
-        return f"{kind}, empty"
-    if s.dtype == object or str(s.dtype).startswith(("string", "category", "bool")):
-        try:
-            vals = nn.astype(str).unique()
-        except Exception:  # noqa: BLE001
-            vals = []
-        if 0 < len(vals) <= MAX_ENUM:
-            return f"{kind}, values: " + " | ".join(sorted(vals)[:MAX_ENUM])
-        return f"{kind}, e.g. " + " | ".join(str(v)[:40] for v in nn.head(3))
-    if pd.api.types.is_datetime64_any_dtype(s) or isinstance(nn.iloc[0], date):
+        return "empty"
+    if pd.api.types.is_bool_dtype(s):
+        return "bool"
+    if _is_dateish(nn):
+        kind = "datetime" if pd.api.types.is_datetime64_any_dtype(nn) else "date (datetime.date)"
         return f"{kind}, {nn.min()} .. {nn.max()}"
     if pd.api.types.is_numeric_dtype(s):
-        return f"{kind}, min {nn.min()} max {nn.max()}"
-    return f"{kind}, e.g. {nn.iloc[0]!s:.40}"
+        return f"number, min {nn.min():g} max {nn.max():g}"
+    # any text-like dtype (object, pandas 3 'str', string, category): list the value set when it is small, so the
+    # model compares against the real codes (status 'done'/'cancelled'...) instead of guessing spellings
+    try:
+        vc = nn.astype(str).value_counts()
+    except Exception:  # noqa: BLE001
+        return f"text, e.g. {nn.iloc[0]!s:.40}"
+    if len(vc) <= MAX_ENUM:
+        items = sorted(vc.items(), key=lambda kv: (-kv[1], kv[0]))
+        return "text, values: " + " | ".join(f"'{v}' ({n})" for v, n in items)
+    return f"text, {len(vc)} distinct, e.g. " + " | ".join(repr(str(v)[:40]) for v in nn.drop_duplicates().head(3))
 
 
 def schema_text(T: dict[str, pd.DataFrame]) -> str:
