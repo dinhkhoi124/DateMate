@@ -17,7 +17,7 @@ Kết quả chỉ dùng để chọn model, sửa prompt/helper và calibrate. N
 ## Chạy
 
 1. Sửa cell cấu hình nếu cần (`MODEL_REPO`, `PER_SHOP`, `SAMPLES`). Lần đầu giữ `PER_SHOP = 6`, `RUN_SMOKE = True`.
-2. Run All. Lần đầu mất thêm khoảng 5–10 phút cài vLLM và khoảng 10 phút tải model 14B AWQ.
+2. Run All. Lần đầu mất thêm khoảng 5–10 phút tạo venv Python 3.12 và cài vLLM và khoảng 10 phút tải model 14B AWQ.
 3. Tải `/kaggle/working/datamate_dev_<model>.zip` (Output → Download) và gửi lead qua Drive nhóm.
    **Không commit** file này: chứa câu hỏi train và output model (D15).
 
@@ -41,8 +41,9 @@ PA tốt nhất, precision, tỉ lệ `error`/`timeout`/`no_code`, thời gian. 
 
 | Triệu chứng | Cách xử lý |
 |---|---|
-| vLLM 0.10.1.1 không import được / không thấy CUDA | Notebook tự cài `VLLM_FALLBACK` (0.8.5.post1). Vẫn lỗi: gửi output cell cài đặt cho lead |
-| Lỗi attention backend hoặc FlashAttention trên T4 | Thêm `os.environ["VLLM_ATTENTION_BACKEND"] = "XFORMERS"` ở cell env |
+| `No matching distribution found for vllm==0.10.1.1` (Requires-Python <3.13) | Kernel Kaggle là Python 3.13. Notebook cài vLLM vào venv Python 3.12 riêng (`uv`, `/tmp/venv`), mọi lệnh pipeline chạy bằng `{PY}`. Không `pip install vllm` vào kernel |
+| vLLM import được nhưng không thấy CUDA / `driver too old` | Gửi output cell cài đặt cho lead (in python, torch, CUDA, capability). Không tự đổi bản vLLM: replay phải cùng bản với image (D17) |
+| Lỗi engine V1 / attention trên T4 | Cell env tự đặt `VLLM_USE_V1=0` và `VLLM_ATTENTION_BACKEND=XFORMERS` khi GPU < sm80 |
 | OOM khi load hoặc KV cache không đủ | Giảm `MAX_LEN` xuống 16384, hoặc dùng bản 8B |
 | Quá chậm | Giảm `PER_SHOP` hoặc `SAMPLES`. Mỗi lần gọi `run_eval` load lại model, nên tắt `RUN_SMOKE` sau lần đầu |
 | Hết quota GPU tuần (~30 giờ/tài khoản) | Thành viên khác chạy bằng tài khoản của mình, cùng notebook |
