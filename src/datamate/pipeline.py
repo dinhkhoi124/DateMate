@@ -73,12 +73,24 @@ def unanswerable(qid: str, reason: str) -> dict:
     return {"id": qid, "type": "unanswerable", "reason": str(reason)}
 
 
-def analyse(q: dict, ctx: Context):
-    """Returns (intent, normalized text, row)."""
+@dataclass
+class Parsed:
+    """Everything before the ensemble decision (eval/calibrate.py replays decide() + finish() per policy on it)."""
+    f: object
+    as_of: date
+    t: str
+    it: object          # rule intent or None
+    unk: list           # coverage-gate unknown words (D10)
+    llm_its: list | None
+    raw: list | None
+
+
+def parse_question(q: dict, ctx: Context) -> Parsed | None:
+    """Rule parse, gate and (when the policy needs it) the LLM call. None: no sales table was understood."""
     st = ctx.store(q["business_id"])
     if st.orders is None or not len(st.orders) or "order_date" not in st.orders:
         # ingest found no sales table: data was not understood, so nothing is known about it (not 'unanswerable')
-        return None, "", abstain(q["id"])
+        return None
     f = facts_of(st, ctx.rules)
     lk = linker_of(f)
     as_of = date.fromisoformat(q["as_of_date"])
@@ -97,6 +109,15 @@ def analyse(q: dict, ctx: Context):
     llm_its = raw = None
     if ctx.llm is not None and needs_llm(it, not unk, ctx.llm.cfg):
         llm_its, raw = ctx.llm.parse(q["question"], periods, lk)
+    return Parsed(f, as_of, t, it, unk, llm_its, raw)
+
+
+def analyse(q: dict, ctx: Context):
+    """Returns (intent, normalized text, row)."""
+    p = parse_question(q, ctx)
+    if p is None:
+        return None, "", abstain(q["id"])
+    t, it, unk, llm_its, raw = p.t, p.it, p.unk, p.llm_its, p.raw
     if ctx.llm is not None:
         d = decide(it, not unk, llm_its, ctx.llm.cfg)
         shown = d.intent or it or next((i for i in llm_its or [] if i is not None), None)
@@ -113,6 +134,12 @@ def analyse(q: dict, ctx: Context):
         if unk:
             it.note = "gate: " + " ".join(unk)
             return it, t, abstain(q["id"])
+    return finish(q, ctx, p, it)
+
+
+def finish(q: dict, ctx: Context, p: Parsed, it):
+    """Decided intent -> row: rulebook block / judge (D18-D19), run-time invariants (D11), executor."""
+    t, f, as_of = p.t, p.f, p.as_of
     folded = fold(q["question"])
     why = ctx.rb.block_reason(it, folded)
     if why:   # D18: the split's rulebook changed a rule this intent relies on, or adds a rule it mentions
