@@ -77,7 +77,7 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
    - [x] Build + chạy thử `--network none --shm-size=16g -v <split>:/data:ro -v <out>:/result` (06/11, sau khi sửa PATH WSL): image 1.08GB, train 3000 câu trong 386s (CPU, gồm ingest nguội), submission container **giống hệt local 3000/3000**, `submit_check` PASS, log 3000 dòng. Chưa chạy với `--gpus` (máy không có GPU NVIDIA)
 
 **07/11 — Baseline public (D16)**
-- [ ] Sinh lại public từ HEAD (LLM tắt), so với `public_v0.6`, `/submit-check`, nộp với loại "<=15B", ghi `EXPERIMENTS.md`
+- [x] Sinh lại public từ HEAD (LLM tắt) = v0.7, giống hệt v0.6, `/submit-check` PASS. **Nộp 09/11: PA public 0.114** (ước 162 đúng / 48 sai, precision ~77%). Baseline cho go/no-go 11/11
 
 **08–10/11 — LLM** (cần GPU)
 - [x] (07/11, CPU) Phần không cần GPU (D14): contract `parse/llm_schema.py` (op = handler executor + `none`, kỳ lấy từ timeparse, mention link bằng Dictionary), backend `parse/llm.py` (vLLM offline guided JSON / replay jsonl ghi-đọc), ensemble `parse/ensemble.py` + `config.LLMConfig`, cờ `--llm/--llm-model/--llm-replay` cho `datamate.run` và `eval/run_eval.py` (`--by source`). Round-trip Intent → JSON → Intent **2410/2410** câu dev đúng. Backend replay rỗng: dev 2410/0/37 không đổi. 153 test pass
