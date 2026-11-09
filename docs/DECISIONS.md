@@ -4,6 +4,38 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D20 — Đổi trục: agent sinh code là đường chính, rule parser là đường nhanh + kiểm tra chéo; được xem cấu trúc dữ liệu public (2026-11-09)
+- **Bối cảnh:**
+  - Public v0.7 = 0.114: trả lời 210/1000 (precision ~77%). Abstain 790 = gate từ lạ 460, rule parser không khớp 155,
+    bất biến ingest 120, executor 55 (đếm từ log, không đọc câu). ≥ 17 đội đạt 1.0 trên public.
+  - D18 chặn 995/1000 câu public: gần như mọi op chạm một dòng luật đã đổi. Executor đặt cứng nghĩa luật train, LLM
+    chọn op (D14) không sửa được điều đó. Private có rulebook riêng nên hướng cũ có trần thấp.
+  - Rule 5: agent "expected" sinh và chạy code. Ngân sách ~43 s/câu (500 câu / 6 giờ).
+  - BTC thêm kênh **Test Solution**: 1 image/ngày (link Google Drive + MD5), BTC chạy thật, kết quả để tham khảo.
+    Nộp `submission.jsonl` public vẫn 5 lần/ngày.
+- **Lựa chọn:**
+  1. **Đường chính = agent sinh code.** Context: toàn bộ rulebook của split (đọc lúc chạy) + README shop + schema và
+     vài dòng mẫu của bảng đã ingest + thư viện helper (timeparse, link tên, format §9). Model ≤ 15B sinh hàm
+     `solve()` pandas, chạy trong sandbox có timeout; lấy k mẫu, chỉ trả lời khi ≥ m mẫu cùng đáp án, còn lại abstain.
+  2. **Rule parser giữ làm đường nhanh và kiểm tra chéo**: khi dòng luật liên quan không đổi và qua gate. Rule và
+     code-gen lệch nhau → abstain (chính sách cụ thể calibrate sau).
+  3. **Đóng băng** D19 rule judge và calibrate ensemble D14 (giữ code, không đầu tư thêm). Không mở rộng op/template.
+  4. **Nới luật nội bộ (D11/D16):** được xem **cấu trúc file dữ liệu và README của public** (tên file, sheet, cột, nhãn
+     trạng thái) để làm reader tổng quát, đúng như BTC xác nhận (SPEC §7.4). Vẫn cấm: câu hỏi public, rulebook public,
+     hardcode theo shop. Log public có chữ câu hỏi (`normalized_question`) → chỉ đọc qua script tổng hợp số đếm.
+  5. **GPU:** dùng nguồn sẵn có trước (CPU local với backend giả hoặc model nhỏ để debug đường chạy, Kaggle/Colab cho
+     vòng lặp dev, Test Solution hằng ngày cho end-to-end). Máy 5090 của thành viên chỉ dùng cho việc bắt buộc đúng phần
+     cứng: build/kiểm image LLM, calibrate cuối, vòng private.
+- **Lý do:**
+  - Code-gen áp dụng được luật mới và ngành mới mà không cần viết op mới; bỏ phiếu k mẫu cho tín hiệu tự tin thay gate
+    từ lạ (gate D10 không phân biệt được đúng/sai trên public).
+  - Vẫn giữ CLAUDE.md luật 4: LLM sinh code, code tính số.
+- **Hệ quả:**
+  - ARCHITECTURE thêm §8 (agent v2); PLAN đổi lịch 09–16/11.
+  - Precision phụ thuộc ngưỡng bỏ phiếu: calibrate trên dev, holdout và rulebook tổng hợp `semantic`; mục tiêu ≥ 90%.
+  - Model 4-bit trên T4 (Kaggle) cho kết quả khác bản trên 5090 → đo lại bằng chính image cuối trước khi nộp.
+  - Image rule-only (`zaic2026_datamate_test:final`, logic v0.6/v0.7) là bản dự phòng và là Test Solution đầu tiên.
+
 ### D19 — Rule judge: model chỉ xác nhận luật của split tương đương phép tính đang chạy (2026-11-07)
 - **Bối cảnh:**
   - D18 chặn 995/1000 câu public. Nhánh LLM hiện tại chỉ sinh intent, còn executor vẫn tính theo nghĩa train. Vì

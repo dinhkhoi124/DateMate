@@ -117,6 +117,30 @@ class LLMConfig:
         return cls(**{**env, **kw})
 
 
+@dataclass(frozen=True)
+class AgentConfig:
+    """Code-gen agent (D20, ARCHITECTURE §8). Env: DATAMATE_AGENT (off|codegen), DATAMATE_AGENT_{SAMPLES,MIN_VOTES,
+    POLICY,TIMEOUT}. The model/backend itself comes from LLMConfig (DATAMATE_LLM*)."""
+    enabled: bool = False
+    n_samples: int = 5                  # k samples per question (temperature from LLMConfig)
+    min_votes: int = 4                  # answer only when >= m samples give the same canonical answer
+    max_tokens: int = 1536
+    timeout_s: float = 20.0             # per sample execution
+    allow_unanswerable: bool = False    # code-gen 'unanswerable' -> abstain until calibrated (CLAUDE.md rule 5)
+    # rule x code-gen: 'codegen' (ignore rule), 'rule_first' (rule answer when it has one), 'agree' (rule answer
+    # only when code-gen agrees or has no majority; rule abstained -> code-gen)
+    policy: str = "agree"
+
+    @classmethod
+    def from_env(cls, **kw) -> "AgentConfig":
+        env: dict = {"enabled": os.environ.get("DATAMATE_AGENT", "off") == "codegen"}
+        for var, fld, typ in (("DATAMATE_AGENT_SAMPLES", "n_samples", int), ("DATAMATE_AGENT_MIN_VOTES", "min_votes", int),
+                              ("DATAMATE_AGENT_POLICY", "policy", str), ("DATAMATE_AGENT_TIMEOUT", "timeout_s", float)):
+            if os.environ.get(var):
+                env[fld] = typ(os.environ[var])
+        return cls(**{**env, **kw})
+
+
 def cache_root() -> Path:
     """Writable cache dir. SPEC §7 câu 2: in Docker /data is read-only and temp files go to /tmp, so predict.sh sets
     DATAMATE_CACHE=/tmp/datamate_cache. Default (dev): <repo>/cache."""

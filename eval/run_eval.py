@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-from datamate.pipeline import Context, abstain, answer_traced  # noqa: E402
-from datamate.run import make_llm  # noqa: E402
+from datamate.pipeline import Context, answer_many  # noqa: E402
+from datamate.run import make_agent, make_llm  # noqa: E402
 from eval.scorer import evaluate, load_jsonl, score  # noqa: E402
 
 TRAIN = ROOT / "data" / "train" / "train"
@@ -41,6 +41,7 @@ def main():
     ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
     ap.add_argument("--llm-model", help="local weights dir")
     ap.add_argument("--llm-replay", help="replay/record jsonl")
+    ap.add_argument("--agent", choices=["off", "codegen"], help="code-gen agent, D20 (default: $DATAMATE_AGENT or off)")
     args = ap.parse_args()
 
     holdout = set(json.loads((ROOT / "eval" / "splits.json").read_text(encoding="utf8"))["holdout"])
@@ -55,16 +56,13 @@ def main():
             sys.exit("--only is not allowed on holdout")
         qs = [q for q in qs if q["business_id"] in set(args.only)]
 
-    ctx = Context(root=TRAIN, llm=make_llm(args.llm, args.llm_model, args.llm_replay), rulebook=args.rulebook)
+    llm = make_llm(args.llm, args.llm_model, args.llm_replay)
+    agent = make_agent(llm, TRAIN, args.rulebook, enabled=args.agent == "codegen" if args.agent else None)
+    ctx = Context(root=TRAIN, llm=llm, rulebook=args.rulebook, agent=agent)
     preds, sources, t0 = [], {}, time.time()
-    for q in qs:
-        try:
-            row, tr = answer_traced(q, ctx)
-            preds.append(row)
-            sources[q["id"]] = (tr.get("inputs") or {}).get("source", "-")
-        except Exception as e:  # report, don't crash
-            print(f"ERR {q['id']}: {e!r}", file=sys.stderr)
-            preds.append(abstain(q["id"]))
+    for q, row, tr in answer_many(qs, ctx):   # never raises per question (abstain + error in trace)
+        preds.append(row)
+        sources[q["id"]] = (tr.get("inputs") or {}).get("source", "-")
     elapsed = time.time() - t0
 
     gl = [golds[q["id"]] for q in qs]
@@ -105,6 +103,9 @@ def main():
         print(ctx.llm.stats_line())
     if ctx.judge is not None:
         print(ctx.judge.stats_line())
+    if ctx.agent is not None:
+        print(ctx.agent.stats_line())
+        ctx.agent.close()
     print(f"\nrun dir: {run_dir.relative_to(ROOT)}")
 
 

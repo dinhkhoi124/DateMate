@@ -38,6 +38,7 @@ class Context:
     rulebook: Path = None                             # override <root>/rulebook.md (synthetic-rulebook tests)
     rb: RulebookDiff = None                           # D18 diff of the split's rulebook vs train
     judge: object = None                              # parse.rule_judge.RuleJudge (D18 branch 3), from `llm`
+    agent: object = None                              # agent.agent.CodeGenAgent (D20); None = no code-gen
 
     def __post_init__(self):
         if self.vocab is None:
@@ -196,3 +197,50 @@ def answer_traced(q: dict, ctx: Context) -> tuple[dict, dict]:
 
 def answer(q: dict, ctx: Context) -> dict:
     return answer_traced(q, ctx)[0]
+
+
+def answer_many(qs: list[dict], ctx: Context):
+    """Yields (q, row, trace) for every question. With the code-gen agent (D20), questions are batched per shop
+    (one model call per shop, cached prefix) and combined with the rule answer by `ctx.agent.cfg.policy`; the
+    yield order then follows shops. Never raises for a single question (abstain + error in trace)."""
+    import time  # noqa: PLC0415
+    import traceback  # noqa: PLC0415
+    if ctx.agent is None:
+        for q in qs:
+            t0 = time.perf_counter()
+            try:
+                row, tr = answer_traced(q, ctx)
+            except Exception:  # noqa: BLE001
+                tb = traceback.format_exc()
+                print(tb, file=sys.stderr)
+                row, tr = abstain(q["id"]), {"thinking": None, "error": tb}
+            yield q, row, {"_t0": t0, **tr}
+        return
+    from datamate.agent.agent import combine  # noqa: PLC0415
+    by_shop: dict[str, list] = {}
+    for q in qs:
+        by_shop.setdefault(q["business_id"], []).append(q)
+    for biz, group in by_shop.items():
+        t0 = time.perf_counter()   # Docker Guide: batched questions count from when they entered the batch
+        rule = []
+        for q in group:
+            try:
+                rule.append(answer_traced(q, ctx))
+            except Exception:  # noqa: BLE001
+                rule.append((abstain(q["id"]), {"thinking": None, "error": traceback.format_exc()}))
+        try:
+            cg = ctx.agent.solve_shop(group, ctx.store(biz))
+        except Exception:  # noqa: BLE001
+            tb = traceback.format_exc()
+            print(tb, file=sys.stderr)
+            cg = [(None, {"error": tb})] * len(group)
+        for q, (rrow, rtr), (crow, ctr) in zip(group, rule, cg):
+            row, src = combine(rrow, crow, ctx.agent.cfg.policy)
+            inputs = dict(rtr.get("inputs") or {})
+            inputs.update(source=src, rule_answer={k: v for k, v in rrow.items() if k != "id"},
+                          codegen_vote=ctr.get("vote"))
+            tr = {"_t0": t0, "thinking": ctr.get("thinking"), "code": ctr.get("code"), "inputs": inputs,
+                  "output": ctr.get("output")}
+            if ctr.get("error"):
+                tr["error"] = ctr["error"]
+            yield q, row, tr

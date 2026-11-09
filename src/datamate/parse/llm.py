@@ -25,9 +25,10 @@ FEWSHOT_PATH = Path(__file__).with_name("fewshot.jsonl")
 class Backend(Protocol):
     name: str
 
-    def complete(self, prompts: list[str], n: int = 1, schema: dict | None = None) -> list[list[str]]:
-        """For each prompt, n raw completions (JSON strings, guided by `schema`, default the intent contract).
-        A failed call returns [] for that prompt."""
+    def complete(self, prompts: list[str], n: int = 1, schema: dict | None = None, free: bool = False,
+                 max_tokens: int | None = None) -> list[list[str]]:
+        """For each prompt, n raw completions (JSON strings, guided by `schema`, default the intent contract;
+        `free=True`: unguided text, e.g. code for the code-gen agent, D20). A failed call returns [] for that prompt."""
         ...
 
 
@@ -52,13 +53,15 @@ class ReplayBackend:
                         self.cache[r["key"]] = r["outputs"]
         self.misses = 0
 
-    def complete(self, prompts: list[str], n: int = 1, schema: dict | None = None) -> list[list[str]]:
-        """The key is the prompt (not the schema): every caller builds a distinct prompt (intent vs rule judge)."""
+    def complete(self, prompts: list[str], n: int = 1, schema: dict | None = None, free: bool = False,
+                 max_tokens: int | None = None) -> list[list[str]]:
+        """The key is the prompt (not the schema): every caller builds a distinct prompt (intent, judge, code-gen)."""
         c = self.cfg
         keys = [prompt_key(c.model_id, p, n, c.temperature, c.seed) for p in prompts]
         todo = [i for i, k in enumerate(keys) if k not in self.cache]
         if todo and self.inner is not None:
-            outs = self.inner.complete([prompts[i] for i in todo], n, **({"schema": schema} if schema else {}))
+            kw = {k: v for k, v in (("schema", schema), ("free", free), ("max_tokens", max_tokens)) if v}
+            outs = self.inner.complete([prompts[i] for i in todo], n, **kw)
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.path, "a", encoding="utf8", newline="\n") as w:
                 for i, o in zip(todo, outs):
@@ -81,24 +84,28 @@ class VLLMBackend:
                        tensor_parallel_size=cfg.tensor_parallel_size)
         self.tok = self.llm.get_tokenizer()
 
-    def _sampling(self, n: int, schema: dict | None = None):
+    def _sampling(self, n: int, schema: dict | None = None, free: bool = False, max_tokens: int | None = None):
         from vllm import SamplingParams  # noqa: PLC0415
+        c = self.cfg
+        if free:   # unguided (code-gen agent, D20)
+            return SamplingParams(n=n, temperature=c.temperature if n > 1 else 0.0, top_p=c.top_p if n > 1 else 1.0,
+                                  seed=c.seed, max_tokens=max_tokens or c.max_tokens)
         try:  # vLLM >= 0.10
             from vllm.sampling_params import StructuredOutputsParams  # noqa: PLC0415
             guided = {"structured_outputs": StructuredOutputsParams(json=schema or json_schema())}
         except ImportError:
             from vllm.sampling_params import GuidedDecodingParams  # noqa: PLC0415
             guided = {"guided_decoding": GuidedDecodingParams(json=schema or json_schema())}
-        c = self.cfg
         return SamplingParams(n=n, temperature=c.temperature if n > 1 else 0.0, top_p=c.top_p if n > 1 else 1.0,
-                              seed=c.seed, max_tokens=c.max_tokens, **guided)
+                              seed=c.seed, max_tokens=max_tokens or c.max_tokens, **guided)
 
-    def complete(self, prompts: list[str], n: int = 1, schema: dict | None = None) -> list[list[str]]:
+    def complete(self, prompts: list[str], n: int = 1, schema: dict | None = None, free: bool = False,
+                 max_tokens: int | None = None) -> list[list[str]]:
         texts = [self.tok.apply_chat_template([{"role": "user", "content": p}], tokenize=False,
                                               add_generation_prompt=True, **self.cfg.chat_template_kwargs)
                  for p in prompts]
         try:
-            res = self.llm.generate(texts, self._sampling(n, schema), use_tqdm=False)
+            res = self.llm.generate(texts, self._sampling(n, schema, free, max_tokens), use_tqdm=False)
         except Exception:  # never crash a run; traceback only (no prompt text) so the GPU log can be shared
             import traceback  # noqa: PLC0415
             print(f"[llm] generate failed:\n{traceback.format_exc(limit=3)}", file=sys.stderr)

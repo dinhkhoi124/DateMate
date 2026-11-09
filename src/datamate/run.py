@@ -12,7 +12,8 @@ import traceback
 from pathlib import Path
 
 from datamate.config import LLMConfig
-from datamate.pipeline import Context, abstain, answer_traced
+from datamate.config import AgentConfig
+from datamate.pipeline import Context, answer_many
 
 
 def make_llm(backend: str | None = None, model: str | None = None, replay: str | None = None):
@@ -22,6 +23,15 @@ def make_llm(backend: str | None = None, model: str | None = None, replay: str |
     cfg = LLMConfig.from_env(**kw)
     be = make_backend(cfg)
     return LLMParser(be, cfg) if be is not None else None
+
+
+def make_agent(llm, root: Path, rulebook: Path | None = None, enabled: bool | None = None):
+    """Code-gen agent (D20) on the same backend as the LLM parser; None when off or no backend."""
+    cfg = AgentConfig.from_env(**({"enabled": enabled} if enabled is not None else {}))
+    if not cfg.enabled or llm is None:
+        return None
+    from datamate.agent.agent import CodeGenAgent  # noqa: PLC0415
+    return CodeGenAgent(llm.backend, cfg, root, rulebook)
 
 
 def find_root(data: Path) -> Path:
@@ -43,6 +53,7 @@ def main(argv=None) -> int:
     ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
     ap.add_argument("--llm-model", help="local weights dir (default: $DATAMATE_LLM_MODEL)")
     ap.add_argument("--llm-replay", help="replay/record jsonl (default: $DATAMATE_LLM_REPLAY)")
+    ap.add_argument("--agent", choices=["off", "codegen"], help="code-gen agent, D20 (default: $DATAMATE_AGENT or off)")
     args = ap.parse_args(argv)
 
     root = find_root(Path(args.data))
@@ -53,7 +64,7 @@ def main(argv=None) -> int:
     except Exception:  # model failed to load (no GPU, OOM...): run the measured rule-only system, never crash (D14)
         print(f"[datamate] LLM disabled, rule-only run:\n{traceback.format_exc(limit=3)}", file=sys.stderr)
         llm = None
-    ctx = Context(root=root, llm=llm)
+    ctx = Context(root=root, llm=llm, agent=make_agent(llm, root, enabled=args.agent == "codegen" if args.agent else None))
     with open(root / "questions.jsonl", encoding="utf8") as f:
         qs = [json.loads(l) for l in f if l.strip()]
     if args.only:
@@ -63,14 +74,8 @@ def main(argv=None) -> int:
     log.parent.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     with open(out, "w", encoding="utf8", newline="\n") as w, open(log, "w", encoding="utf8", newline="\n") as lg:
-        for q in qs:
-            tq = time.perf_counter()
-            try:
-                row, trace = answer_traced(q, ctx)
-            except Exception:  # never crash the run
-                tb = traceback.format_exc()
-                print(tb, file=sys.stderr)
-                row, trace = abstain(q["id"]), {"thinking": None, "error": tb}
+        for q, row, trace in answer_many(qs, ctx):
+            tq = trace.pop("_t0")   # question start (batched: when it entered its batch)
             w.write(json.dumps(row, ensure_ascii=False) + "\n")
             w.flush()
             # SPEC submission contract (Guide §3.3): one record per question in /result/logs/, always id, answer,
@@ -84,6 +89,9 @@ def main(argv=None) -> int:
         print(ctx.llm.stats_line(), file=sys.stderr)
     if ctx.judge is not None:
         print(ctx.judge.stats_line(), file=sys.stderr)
+    if ctx.agent is not None:
+        print(ctx.agent.stats_line(), file=sys.stderr)
+        ctx.agent.close()
     return 0
 
 

@@ -16,7 +16,35 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 
 **Chia tập:** holdout gồm `biz_103, biz_110, biz_117, biz_123, biz_125, biz_128`, mỗi shop một kiểu xuất khác nhau. Danh sách chính thức nằm ở `eval/splits.json`. Phần còn lại là dev.
 
-## Checklist theo ngày
+## Lịch mới sau D20 (09/11): agent sinh code là đường chính
+
+GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = bắt buộc máy GPU thành viên.
+
+**09/11**
+- [ ] Test Solution #1: image rule-only (`zaic2026_datamate_test:final`) → `docker save` → MD5 → Drive public → nộp. Kiểm container trên public = v0.7 trước khi gửi
+   - [x] Container trên public = v0.7 (1000/1000, 153s, submit_check PASS); tar 308MB, MD5 `31440b7cda3d15efc37724bb22f67b1d`. Còn: upload Drive + nộp form
+- [x] D20 (DECISIONS), PLAN, ARCHITECTURE §8
+- [x] Khung agent code-gen trên CPU: `src/datamate/agent/` (context builder, helper, sandbox, bỏ phiếu, log), backend giả, test
+
+**10/11**
+- [ ] Notebook Kaggle (private dataset = train): vLLM + model ≤ 15B bản 4-bit, chạy agent trên 100–200 câu dev
+- [ ] Chọn model: 2–3 ứng viên ≤ 15B (ngày public < 26/10/2026, license) trên cùng 100 câu dev: PA, precision, giây/câu
+
+**11/11 — Go/no-go**
+- [ ] Full dev + holdout + rulebook tổng hợp (cosmetic/semantic), calibrate k/m và chính sách rule × code-gen. Precision ≥ 90%
+- [ ] Nộp public jsonl v2 (Kaggle sinh). So 0.114
+
+**12/11**
+- [ ] **[5090]** Build image LLM (base vLLM 0.10.1.1, weights trong image, TP=2), `check_image.sh`, Test Solution #2
+
+**13–15/11**
+- [ ] Sửa theo nhóm lỗi dev/holdout (không theo public), tối ưu tốc độ ≤ 30 s/câu, Test Solution mỗi ngày
+- [ ] **[5090]** Đo lại ngưỡng bằng chính image cuối
+- [ ] Upload image final lên Drive (30–40 GB) trước 15/11 tối, thử tải về + MD5
+
+**16/11** — Nộp final (≤ 2 lần) trước 23:59. **20–23/11** — **[5090]** chạy private
+
+## Checklist theo ngày (trước D20)
 
 ### Phase 1 — Plan & Design (04/11) ✅
 - [x] Đọc thể lệ, rulebook. Khám phá data và intent (`analysis/intent_survey.py`)
