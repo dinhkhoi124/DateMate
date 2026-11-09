@@ -48,7 +48,7 @@ def main():
                     if code is None:
                         new.append({"status": "no_code"})
                         continue
-                    status, val = sb.run(Job(code, q["as_of_date"], normalize(q["question"])))
+                    status, val = sb.run(Job(code, q["as_of_date"], normalize(q["question"]), q["question"]))
                     new.append({"status": status, "result": val})
                 changed += new != (t.get("output") or [])
                 t["output"] = new

@@ -89,6 +89,6 @@ def shop_tables(root: Path, biz: str, rulebook: Path | None = None):
         lk = None
     T = frames_of(st)
 
-    def make_h(as_of: date, question_norm: str):
-        return Helpers(as_of, question_norm, cal, rules, lk, cal_df)
+    def make_h(as_of: date, question_norm: str, question: str = ""):
+        return Helpers(as_of, question_norm, cal, rules, lk, cal_df, question)
     return T, make_h

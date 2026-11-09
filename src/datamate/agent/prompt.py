@@ -37,8 +37,12 @@ Lưu ý khi viết code:
 - Tìm sản phẩm/khách/nhóm hàng trong câu hỏi: gọi H.find_products(), H.find_customers(), H.find_categories()
   KHÔNG truyền đối số. Lọc bảng theo cột product_key / customer_id / category bằng key trả về.
 - Mọi giá trị tiền, kể cả trung bình tiền mỗi đơn hay giá bình quân, trả qua H.money.
-- Số lượng theo đơn vị cơ sở là qty_base (= qty × factor). Câu hỏi theo đơn vị khác (thùng, hộp, vỉ…) thì đổi
-  bằng factor trong T['units'] của đúng sản phẩm.
+- Số lượng theo đơn vị cơ sở (products.base_unit) là qty_base (= qty × factor). Câu hỏi hỏi đúng đơn vị cơ sở thì
+  dùng qty_base, không cần T['units']. Hỏi theo đơn vị khác (thùng, hộp, vỉ…) thì chia cho factor trong T['units']
+  của đúng sản phẩm. Giá của một đơn vị cơ sở = unit_price / factor của dòng bán.
+- Phân biệt câu hỏi số lượng ("bao nhiêu chai/ly/kg/đơn/khách") với câu hỏi tiền ("bao nhiêu tiền", doanh thu).
+- Kiểu đáp án theo cách hỏi: hỏi MỘT đối tượng ("món nào bán chạy nhất", "khách nào…") -> string;
+  hỏi nhiều đối tượng ("top 3", "những món nào", "liệt kê") -> list; hỏi có/không -> boolean.
 - Nếu sau khi lọc không còn dòng nào mà câu hỏi kỳ vọng có dữ liệu, trả {"type": "abstain"} thay vì 0.
 
 Trả lời bằng đúng một khối ```python ... ``` chứa hàm solve (có thể kèm hàm phụ). Không giải thích ngoài khối code."""
@@ -50,9 +54,9 @@ HELPER_DOC = """API của H (đã cài đúng rulebook mục thời gian và là
 - H.month(y, m), H.quarter(y, q), H.tet(lunar_year) -> period dict; H.week_start(d) -> date.
 - H.previous(p): kỳ liền trước cùng độ dài; H.last_year(p): cùng kỳ năm trước.
 - H.in_period(series, p) -> mask bool (so theo ngày, gồm cả hai đầu).
-- H.find_products(text=None), H.find_customers(text=None), H.find_categories(text=None)
-  -> list[{"key", "matched", "ambiguous"}]: thực thể nhắc trong câu hỏi; key khớp cột product_key / customer_id /
-  category của T. Dùng các hàm này thay vì so chuỗi tay (câu hỏi có thể không dấu, viết tắt, sai chính tả).
+- H.find_products(text=None), H.find_customers(text=None), H.find_categories(text=None),
+  H.find_ingredients(text=None) -> list[{"key", "matched", "ambiguous"}]: thực thể nhắc trong câu hỏi; key khớp cột
+  product_key / customer_id / category / active_ingredient của T. Dùng các hàm này thay vì so chuỗi tay (câu hỏi có thể không dấu, viết tắt, sai chính tả).
 - H.money(x) -> int; H.r2(x) -> float; H.pct(part, whole) -> float | None.
 - H.calendar: DataFrame lịch (date, weekday, lunar_day, lunar_month, lunar_year, lunar_leap, holiday)."""
 

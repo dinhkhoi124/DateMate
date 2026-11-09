@@ -36,9 +36,11 @@ class Helpers:
     """API documented to the model in agent/prompt.py:HELPER_DOC (keep both in sync)."""
 
     def __init__(self, as_of: date, question_norm: str, cal: LunarCalendar, rules: Rules, linker=None,
-                 calendar_df: pd.DataFrame | None = None):
+                 calendar_df: pd.DataFrame | None = None, question: str = ""):
         self.as_of = as_of
         self._q = question_norm
+        self._raw = question or question_norm   # catalog lookup: normalize() corrects typos ('gas' -> 'ga') that
+                                                # would break names, so names are matched on norm_name(raw) too
         self._cal, self._rules, self._lk = cal, rules, linker
         self.calendar = calendar_df
 
@@ -81,15 +83,35 @@ class Helpers:
 
     # ---- catalog lookup -----------------------------------------------------------------------------------------
     def _find(self, dic, text: str | None) -> list[dict]:
+        """Exact name hits on norm_name and on normalize() of the text; for an explicit text without a hit, names
+        that contain every word of it (models often pass a shortened name)."""
         if self._lk is None or dic is None:
             return []
+        from datamate.link.catalog import norm_name  # noqa: PLC0415
         from datamate.normalize.text import normalize  # noqa: PLC0415
-        t = self._q if text is None else normalize(text)
-        return [{"key": h.key, "matched": h.text, "ambiguous": h.ambiguous} for h in dic.find(t)]
+        raw = self._raw if text is None else str(text)
+        variants = [norm_name(raw)] + ([self._q] if text is None else [normalize(raw)])
+        for t in variants:
+            hits = dic.find(t)
+            if hits:
+                return [{"key": h.key, "matched": h.text, "ambiguous": h.ambiguous} for h in hits]
+        if text is None:
+            return []
+        words = set(norm_name(raw).split())
+        if not words:
+            return []
+        names = [n for n in dic.names if words <= set(n.split())]
+        keys = sorted({k for n in names for k in dic.map[n]}, key=str)
+        return [{"key": k, "matched": n, "ambiguous": len(keys) > 1} for n in sorted(names)
+                for k in sorted(dic.map[n], key=str)][:8]
 
     def find_products(self, text: str | None = None) -> list[dict]:
         """Products named in text (default: the question). key = product_key column of T tables."""
         return self._find(getattr(self._lk, "products", None), text)
+
+    def find_ingredients(self, text: str | None = None) -> list[dict]:
+        """Active ingredients (pharmacy shops); key = value of products.active_ingredient."""
+        return self._find(getattr(self._lk, "ingredients", None), text)
 
     def find_customers(self, text: str | None = None) -> list[dict]:
         return self._find(getattr(self._lk, "customers", None), text)

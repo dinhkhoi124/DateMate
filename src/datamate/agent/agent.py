@@ -67,7 +67,7 @@ class CodeGenAgent:
             if code is None:
                 results.append({"status": "no_code"})
                 continue
-            status, val = sb.run(Job(code, q["as_of_date"], qn))
+            status, val = sb.run(Job(code, q["as_of_date"], qn, q["question"]))
             results.append({"status": status, "result": val})
             if status == "ok":
                 k = vote_key(val)

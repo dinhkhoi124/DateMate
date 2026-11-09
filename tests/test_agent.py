@@ -133,3 +133,21 @@ def test_schema_lists_text_values_and_drops_empty_columns():
     df = df[[c for c in df.columns if df[c].notna().any()]]
     s = schema_text({"orders": df})
     assert "'done' (2) | 'cancelled' (1)" in s and "debt" not in s
+
+
+def test_helpers_find_products_raw_and_partial_names():
+    # Kaggle v2: normalize() turns 'gas' into 'ga', so names passed by the model (or the question) missed the catalog
+    from datetime import date
+
+    from datamate.agent.helpers import Helpers
+    from datamate.link.catalog import Dictionary
+
+    class Lk:
+        products = Dictionary([("Bộ van dây gas Namilux", "SP1"), ("Thép cuộn phi 6 Hòa Phát", "SP2"),
+                               ("Thép cuộn phi 8 Hòa Phát", "SP3")])
+    h = Helpers(date(2026, 1, 1), "so bo van day ga namilux", None, None, Lk(), None, "số bộ van dây gas Namilux")
+    assert [r["key"] for r in h.find_products()] == ["SP1"]
+    assert [r["key"] for r in h.find_products("Bộ van dây gas Namilux")] == ["SP1"]
+    assert [r["key"] for r in h.find_products("thép cuộn phi 6")] == ["SP2"]
+    hits = h.find_products("thép cuộn")
+    assert [r["key"] for r in hits] == ["SP2", "SP3"] and all(r["ambiguous"] for r in hits)

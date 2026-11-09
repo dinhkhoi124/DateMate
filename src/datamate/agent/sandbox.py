@@ -57,6 +57,7 @@ class Job:
     code: str
     as_of: str           # ISO date
     question_norm: str
+    question: str = ""   # raw text, for catalog lookup (helpers.Helpers._find)
 
 
 # --------------------------------------------------------------------------- worker side
@@ -81,7 +82,7 @@ def _worker(conn, root: str, biz: str, rulebook: str | None):
         if job is None:
             return
         try:
-            res = exec_solve(job.code, T, make_h(date.fromisoformat(job.as_of), job.question_norm))
+            res = exec_solve(job.code, T, make_h(date.fromisoformat(job.as_of), job.question_norm, job.question))
             conn.send(("ok", canon(res)))
         except Exception as e:  # noqa: BLE001  (model code: any error just discards this sample)
             conn.send(("error", f"{type(e).__name__}: {e}"[:300]))
