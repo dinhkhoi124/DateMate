@@ -44,6 +44,7 @@ PA tốt nhất, precision, tỉ lệ `error`/`timeout`/`no_code`, thời gian. 
 | `No matching distribution found for vllm==0.10.1.1` (Requires-Python <3.13) | Kernel Kaggle là Python 3.13. Notebook cài vLLM vào venv Python 3.12 riêng (`uv`, `/tmp/venv`), mọi lệnh pipeline chạy bằng `{PY}`. Không `pip install vllm` vào kernel |
 | vLLM import được nhưng không thấy CUDA / `driver too old` | Gửi output cell cài đặt cho lead (in python, torch, CUDA, capability). Không tự đổi bản vLLM: replay phải cùng bản với image (D17) |
 | `Qwen2Tokenizer has no attribute all_special_tokens_extended` | transformers 5.x không chạy với vLLM 0.10.1.1. Notebook pin `TRANSFORMERS_VERSION = "4.55.4"`; xem dòng `transformers` trong output cell cài đặt |
+| `PassManager::run failed` ở `prefix_prefill.py` (`compute-capability=75`) | Kernel Triton prefix-prefill của vLLM không biên dịch cho T4. Cell env tự đặt `DATAMATE_LLM_PREFIX_CACHE=0` (tắt prefix caching và chunked prefill) khi GPU < sm80. Chậm hơn vì mỗi câu prefill lại prompt |
 | Lỗi engine V1 / attention trên T4 | Cell env tự đặt `VLLM_USE_V1=0` và `VLLM_ATTENTION_BACKEND=XFORMERS` khi GPU < sm80 |
 | OOM khi load hoặc KV cache không đủ | Giảm `MAX_LEN` xuống 16384, hoặc dùng bản 8B |
 | Quá chậm | Giảm `PER_SHOP` hoặc `SAMPLES`. Mỗi lần gọi `run_eval` load lại model, nên tắt `RUN_SMOKE` sau lần đầu |

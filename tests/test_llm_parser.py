@@ -168,5 +168,7 @@ def test_gpu_env_overrides(monkeypatch):
     monkeypatch.setenv("DATAMATE_LLM_TP", "2")
     monkeypatch.setenv("DATAMATE_LLM_DTYPE", "float16")
     monkeypatch.setenv("DATAMATE_LLM_CALL_ALL", "1")
+    monkeypatch.setenv("DATAMATE_LLM_PREFIX_CACHE", "0")
     c = LLMConfig.from_env()
-    assert (c.tensor_parallel_size, c.dtype, c.call_all) == (2, "float16", True)
+    assert (c.tensor_parallel_size, c.dtype, c.call_all, c.prefix_caching) == (2, "float16", True, False)
+    assert LLMConfig().prefix_caching

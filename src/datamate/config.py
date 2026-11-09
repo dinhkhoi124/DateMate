@@ -62,7 +62,7 @@ class LLMConfig:
     """LLM parser + ensemble (DECISIONS D14). backend 'off' = rule-only pipeline, unchanged behaviour.
     Env: DATAMATE_LLM (off|vllm|replay), DATAMATE_LLM_MODEL (local weights dir), DATAMATE_LLM_REPLAY (jsonl),
     DATAMATE_LLM_SAMPLES, DATAMATE_LLM_MODEL_ID, DATAMATE_LLM_CALL_ALL, DATAMATE_LLM_RULE_JUDGE (1 = on),
-    DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}."""
+    DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}, DATAMATE_LLM_PREFIX_CACHE (0 = off)."""
     backend: str = "off"
     model_path: str = ""
     model_id: str = ""                      # cache key part; defaults to the weights dir name
@@ -70,6 +70,8 @@ class LLMConfig:
     max_model_len: int = 12288                # prompt ~7k tokens (81 few-shot), prefix-cached
     gpu_memory_utilization: float = 0.85
     tensor_parallel_size: int = 1
+    # off on GPUs < sm80 (T4): vLLM's Triton prefix-prefill kernel does not compile for sm75 (Kaggle, 09/11)
+    prefix_caching: bool = True
     max_tokens: int = 256
     n_samples: int = 1                      # > 1: self-consistency votes, sampled at `temperature`
     temperature: float = 0.7
@@ -110,6 +112,8 @@ class LLMConfig:
                                 ("DATAMATE_LLM_MAX_LEN", "max_model_len", int)):
             if os.environ.get(var):
                 env[field] = typ(os.environ[var])
+        if os.environ.get("DATAMATE_LLM_PREFIX_CACHE", "") == "0":
+            env["prefix_caching"] = False
         if os.environ.get("DATAMATE_LLM_CALL_ALL", "") not in ("", "0"):
             env["call_all"] = True
         if os.environ.get("DATAMATE_LLM_RULE_JUDGE", "") not in ("", "0"):

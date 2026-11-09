@@ -80,7 +80,10 @@ class VLLMBackend:
         self.cfg = cfg
         self.name = f"vllm:{cfg.model_id}"
         self.llm = LLM(model=cfg.model_path, dtype=cfg.dtype, seed=cfg.seed, max_model_len=cfg.max_model_len,
-                       gpu_memory_utilization=cfg.gpu_memory_utilization, enable_prefix_caching=True,
+                       gpu_memory_utilization=cfg.gpu_memory_utilization,
+                       enable_prefix_caching=cfg.prefix_caching,
+                       # no prefix cache -> also no chunked prefill: both go through the Triton prefix-prefill kernel
+                       **({} if cfg.prefix_caching else {"enable_chunked_prefill": False}),
                        tensor_parallel_size=cfg.tensor_parallel_size)
         self.tok = self.llm.get_tokenizer()
 
