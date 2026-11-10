@@ -90,3 +90,45 @@ def test_store_rules(tmp_path):
     assert O.loc["HD4", "status"] == "returned"
     assert O.loc["HD1", "status"] == "done"
     assert bool(O.loc["HD2", "is_walkin"])
+
+
+def _fresh_prune_state(monkeypatch, cache):
+    import datamate.ingest.store as S
+    monkeypatch.setenv("DATAMATE_CACHE", str(cache))
+    monkeypatch.setattr(S, "_pruned", set())
+    return S
+
+
+def test_cache_prune_removes_only_other_generations(tmp_path, monkeypatch):
+    """Stale entries (other ingest code, or the layout before generations) go; current ones and other files stay."""
+    S = _fresh_prune_state(monkeypatch, tmp_path / "cache")
+    d = tmp_path / "cache" / "store"
+    d.mkdir(parents=True)
+    gen = S._cache_gen()
+    other = "0" * 8 if gen != "0" * 8 else "1" * 8
+    h = "0123456789abcdef"
+    keep = [f"biz_101_{gen}_{h}.pkl", f"dev_001_{gen}_{h}.pkl", f"biz_12345678_{gen}_{h}.pkl", "notes.txt",
+            "biz_101.pkl"]
+    drop = [f"biz_101_{other}_{h}.pkl", f"biz_101_{h}.pkl", f"dev_001_{h}.pkl"]
+    for n in keep + drop:
+        (d / n).write_bytes(b"x")
+    assert S._prune_stale_cache(d) == len(drop)
+    assert sorted(p.name for p in d.iterdir()) == sorted(keep)
+    (d / drop[0]).write_bytes(b"x")
+    assert S._prune_stale_cache(d) == 0          # once per process and directory
+
+
+def test_cache_roundtrip_and_prune_on_build(tmp_path, monkeypatch):
+    S = _fresh_prune_state(monkeypatch, tmp_path / "cache")
+    shop = _write_shop(tmp_path)
+    d = tmp_path / "cache" / "store"
+    d.mkdir(parents=True)
+    (d / "biz_test_0123456789abcdef.pkl").write_bytes(b"stale")
+    st1 = Store.build(shop)
+    files = [p.name for p in d.iterdir()]
+    assert files == [S._cache_path(shop).name] and f"_{S._cache_gen()}_" in files[0]
+    st2 = Store.build(shop)                       # served from cache
+    pd.testing.assert_frame_equal(st1.orders, st2.orders)
+    pd.testing.assert_frame_equal(st1.lines, st2.lines)
+    (d / files[0]).write_bytes(b"half-written")   # unreadable entry: rebuild instead of crashing
+    pd.testing.assert_frame_equal(Store.build(shop).orders, st1.orders)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import pickle
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -115,16 +116,21 @@ class Store:
     @classmethod
     def build(cls, shop_dir: Path | str, use_cache: bool = True) -> "Store":
         shop_dir = Path(shop_dir)
-        ck = _cache_path(shop_dir)
-        if use_cache and ck and ck.exists():
-            with open(ck, "rb") as f:
-                return pickle.load(f)
+        ck = _cache_path(shop_dir) if use_cache else None
+        if ck:
+            _prune_stale_cache(ck.parent)
+            if ck.exists():
+                try:
+                    with open(ck, "rb") as f:
+                        return pickle.load(f)
+                except (OSError, EOFError, pickle.UnpicklingError, AttributeError, ImportError):
+                    pass   # removed by a concurrent prune, or half-written: rebuild
         spec = parse_readme(shop_dir / "README.md")
         tables = [build_table(t) for t in read_shop(shop_dir, spec)]
         st = cls(business_id=shop_dir.name, spec=spec)
         st.table_kinds = [(t.name, t.kind, dict(t.roles)) for t in tables]
         st._assemble(tables)
-        if use_cache and ck:
+        if ck:
             try:
                 ck.parent.mkdir(parents=True, exist_ok=True)
                 with open(ck, "wb") as f:
@@ -680,8 +686,9 @@ def _cache_path(shop_dir: Path) -> Path | None:
         for p in sorted(shop_dir.iterdir()):
             st = p.stat()
             sig.append(f"{p.name}|{st.st_size}|{st.st_mtime_ns}")
-        h = hashlib.md5(("|".join(sig) + STORE_VERSION + _code_sig()).encode()).hexdigest()[:16]
-        return _cache_dir() / f"{shop_dir.name}_{h}.pkl"
+        gen = _cache_gen()
+        h = hashlib.md5(("|".join(sig) + gen).encode()).hexdigest()[:16]
+        return _cache_dir() / f"{shop_dir.name}_{gen}_{h}.pkl"
     except OSError:
         return None
 
@@ -691,6 +698,45 @@ def _code_sig() -> str:
     here = Path(__file__).parent
     return "".join(str(p.stat().st_mtime_ns) for p in sorted(here.glob("*.py"))) + \
         str((here / "learned_names.json").stat().st_mtime_ns)
+
+
+def _cache_gen() -> str:
+    """Cache generation: STORE_VERSION + ingest code. Entries of another generation are never read again."""
+    return hashlib.md5((STORE_VERSION + _code_sig()).encode()).hexdigest()[:8]
+
+
+# <shop>_<gen8>_<hash16>.pkl (current layout) or <shop>_<hash16>.pkl (layout before generations)
+_CACHE_NAME = re.compile(r"^.+?(?:_([0-9a-f]{8}))?_[0-9a-f]{16}\.pkl$")
+_pruned: set[tuple[str, str]] = set()
+
+
+def _prune_stale_cache(cache_dir: Path) -> int:
+    """Delete store cache entries written by other ingest code (once per process and directory).
+
+    Only files named like a store entry are touched, and only those of another generation: an entry of the current
+    code is kept whatever its shop or data directory (train, synth and test shops can share a shop name). Errors (file
+    in use, already removed by a concurrent run) are ignored; a later run retries.
+    """
+    gen = _cache_gen()
+    key = (str(cache_dir), gen)
+    if key in _pruned:
+        return 0
+    _pruned.add(key)
+    removed = 0
+    try:
+        entries = list(cache_dir.iterdir())
+    except OSError:
+        return 0
+    for p in entries:
+        m = _CACHE_NAME.match(p.name)
+        if not m or m.group(1) == gen or not p.is_file():
+            continue
+        try:
+            p.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 __all__ = ["Store", "name_key", "date"]
