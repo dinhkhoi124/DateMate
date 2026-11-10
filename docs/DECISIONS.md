@@ -4,6 +4,25 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D21 — Tách luồng nộp chính thức khỏi thử nghiệm; không dùng điểm public để chọn hay tối ưu cấu hình (2026-11-10)
+- **Bối cảnh:** `eval/resubmit_agent.py` dựng submission public từ log GPU trên CPU, đổi được policy/m tuỳ ý. Một
+  đề xuất trước đó là nộp nhiều biến thể (agree/codegen) rồi so điểm public, tức là chọn cấu hình theo điểm public. Làm
+  vậy là tune trên public (trái D03) và overfit 1000 câu public.
+- **Lựa chọn:**
+  1. **Cấu hình chính thức = mặc định của `AgentConfig`** đã commit. Hiện tại: policy `agree`, k=5, **m=2**,
+     unanswerable tắt. m=2 được chọn theo tiêu chí đặt trước: PA cao nhất ở dòng code-gen một mình trên dev
+     (Kaggle v3 + reexec CPU 1a1550e: m=2 0.653, m=3 0.611).
+  2. **Luồng chính thức:** `resubmit_agent.py` không có `--experiment`. Không nhận `--policy/--m`, bỏ qua env, ghi
+     `submission.jsonl.meta.json` (commit, cờ dirty, config, số đếm). Mỗi lần chạy GPU trên public chỉ nộp một bản.
+  3. **Luồng thử nghiệm:** `--experiment`, `calibrate_agent.py`, `run_eval.py` chỉ chạy trên train (dev/holdout). Công
+     cụ từ chối `--experiment` khi split không có `answers.jsonl`.
+  4. Điểm public chỉ ghi vào bảng "Nộp public" của EXPERIMENTS.md để theo dõi tiến độ, không làm căn cứ đổi cấu hình,
+     prompt hay luật. Đổi cấu hình phải có số train mới và một entry DECISIONS.
+- **Lý do:** điểm public là tập cố định, nhỏ và lặp lại; chọn theo nó lạc quan giả và không chuyển sang private.
+- **Hệ quả:** cấu hình m=2 mới chỉ có dev 72 câu (nhiễu ±0.04). Cần holdout tổng hợp của agent (GPU) để xác nhận;
+  nếu holdout nói khác thì đổi theo holdout, không theo public. Docker image dùng cùng mặc định nên bản nộp image và
+  jsonl nhất quán.
+
 ### D20 — Đổi trục: agent sinh code là đường chính, rule parser là đường nhanh + kiểm tra chéo; được xem cấu trúc dữ liệu public (2026-11-09)
 - **Bối cảnh:**
   - Public v0.7 = 0.114: trả lời 210/1000 (precision ~77%). Abstain 790 = gate từ lạ 460, rule parser không khớp 155,

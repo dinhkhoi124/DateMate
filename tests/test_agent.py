@@ -100,7 +100,7 @@ def test_agent_votes():
     q = {"id": "t1", "business_id": SHOP, "question": "shop có tổng cộng bao nhiêu đơn", "as_of_date": "2026-08-24"}
     st = Store.build(ROOT / "data" / SHOP)
     other = COUNT_ORDERS.replace('len(T["orders"])', "1")
-    agent = CodeGenAgent(FakeBackend([COUNT_ORDERS] * 4 + [other]), AgentConfig(enabled=True), ROOT)
+    agent = CodeGenAgent(FakeBackend([COUNT_ORDERS] * 4 + [other]), AgentConfig(enabled=True, min_votes=4), ROOT)
     try:
         (row, tr), = agent.solve_shop([q], st)
         assert row == {"type": "number", "answer": len(st.orders)} and tr["vote"] == "4/5"
@@ -192,3 +192,21 @@ def solve(T, H):
     finally:
         sb.close()
     assert status == "ok", val
+
+
+def test_resubmit_official_vs_experiment(tmp_path, monkeypatch):
+    """D21: official run takes policy/m only from AgentConfig defaults; --experiment refuses a split without answers."""
+    import sys
+    from eval import resubmit_agent
+    (tmp_path / "questions.jsonl").write_text('{"id": "a", "business_id": "b"}\n', encoding="utf8")
+    log = tmp_path / "log.jsonl"
+    log.write_text('{"id": "a", "inputs": {"rule_answer": {"type": "abstain"}}, "output": []}\n', encoding="utf8")
+    base = ["resubmit_agent.py", str(log), "--data", str(tmp_path), "--out", str(tmp_path / "s.jsonl")]
+    for extra in (["--m", "3"], ["--experiment"]):
+        monkeypatch.setattr(sys, "argv", base + extra)
+        with pytest.raises(SystemExit):
+            resubmit_agent.main()
+    monkeypatch.setattr(sys, "argv", base)
+    resubmit_agent.main()
+    assert (tmp_path / "s.jsonl").read_text(encoding="utf8").strip() == '{"id": "a", "type": "abstain"}'
+    assert '"min_votes": 2' in (tmp_path / "s.jsonl.meta.json").read_text(encoding="utf8")

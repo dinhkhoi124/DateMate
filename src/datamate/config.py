@@ -130,7 +130,9 @@ class AgentConfig:
     POLICY,TIMEOUT,MAX_TOKENS}. The model/backend itself comes from LLMConfig (DATAMATE_LLM*)."""
     enabled: bool = False
     n_samples: int = 5                  # k samples per question (temperature from LLMConfig)
-    min_votes: int = 4                  # answer only when >= m samples give the same canonical answer
+    # answer only when >= m samples give the same canonical answer. D21: chosen on train dev only (code-gen alone,
+    # Kaggle v3 + CPU reexec 1a1550e: m=2 PA 0.653 > m=3 0.611); these defaults ARE the official submission config
+    min_votes: int = 2
     max_tokens: int = 1536
     timeout_s: float = 20.0             # per sample execution
     allow_unanswerable: bool = False    # code-gen 'unanswerable' -> abstain until calibrated (CLAUDE.md rule 5)

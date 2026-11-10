@@ -11,6 +11,7 @@ Agent trả lời câu hỏi tiếng Việt trên dữ liệu bảng của shop 
 5. **Không chắc thì abstain.** `unanswerable` chỉ trả khi có căn cứ deterministic (capability thiếu hoặc kỳ hỏi ngoài dữ liệu).
 6. Model ≤ 15B tổng tham số, chạy offline. Không gọi mạng trong `src/`.
 7. `data/` là read-only. Không ghi vào đó.
+8. **Không dùng điểm public để chọn hoặc tối ưu cấu hình** (policy, m, prompt, luật). Mọi tuning chạy trên train; submission chính thức chỉ sinh bằng cấu hình đã commit (D21).
 
 ## Lệnh
 ```bash

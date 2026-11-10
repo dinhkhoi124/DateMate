@@ -3,25 +3,34 @@
 The Kaggle public notebook runs `datamate.run --agent codegen` in shards and ships each shard's `log.jsonl`
 (Docker Guide fields: id, answer, thinking, code, inputs.rule_answer, output). This tool merges the shards,
 optionally re-executes the recorded code with the CURRENT sandbox/helpers/tables (`--reexec`, like
-eval/reexec_agent.py), re-votes with any policy/m and writes one row per question of `--data` (missing -> abstain).
+eval/reexec_agent.py), re-votes and writes one row per question of `--data` (missing -> abstain).
+
+D21 — official vs experiment are separate paths:
+- **official** (default): policy/m/unanswerable come ONLY from the committed `AgentConfig()` defaults (chosen on
+  train dev/holdout). No CLI override, env ignored. Writes `<out>.meta.json` (commit, config, counts) for the log.
+- **--experiment**: `--policy/--m/--unanswerable` allowed, but only on a split that has `answers.jsonl` (train).
+  Refuses public: the public score is never used to pick or tune a config.
 
 Prints counts only (CLAUDE.md rule 1: public questions are never read for rules or prompts).
 
-    python eval/resubmit_agent.py out/*/logs/log.jsonl --data data/public_test/public_test \
-        --policy agree --m 2 --out eval/runs/public_v2/submission.jsonl [--reexec]
+    python eval/resubmit_agent.py out/shard*/log.jsonl --data data/public_test/public_test \
+        --out eval/runs/public_pub1/submission.jsonl --reexec
 """
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from collections import Counter
+from dataclasses import asdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 
 from datamate.agent.agent import combine  # noqa: E402
+from datamate.config import AgentConfig  # noqa: E402
 from eval.calibrate_agent import POLICIES, revote  # noqa: E402
 from eval.scorer import load_jsonl  # noqa: E402
 
@@ -59,13 +68,24 @@ def main():
     ap.add_argument("logs", nargs="+", help="log.jsonl of each shard (later files win on duplicate ids)")
     ap.add_argument("--data", required=True, help="dir with questions.jsonl (+ data/, rulebook.md for --reexec)")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--policy", choices=POLICIES, default="agree")
-    ap.add_argument("--m", type=int, default=2, help="min votes for the code-gen answer")
+    ap.add_argument("--experiment", action="store_true", help="allow --policy/--m/--unanswerable (train only)")
+    ap.add_argument("--policy", choices=POLICIES)
+    ap.add_argument("--m", type=int, help="min votes for the code-gen answer")
     ap.add_argument("--unanswerable", action="store_true", help="let a code-gen 'unanswerable' majority through")
     ap.add_argument("--reexec", action="store_true", help="re-run recorded code with the current sandbox first")
     args = ap.parse_args()
 
     root = Path(args.data)
+    official = AgentConfig()   # committed defaults, deliberately not from_env()
+    if args.experiment:
+        if not (root / "answers.jsonl").exists():
+            ap.error("--experiment only on a split with answers.jsonl (train); public uses the official config (D21)")
+        args.policy = args.policy or official.policy
+        args.m = args.m or official.min_votes
+    else:
+        if args.policy or args.m or args.unanswerable:
+            ap.error("official run: policy/m/unanswerable come from AgentConfig defaults (D21); use --experiment on train")
+        args.policy, args.m, args.unanswerable = official.policy, official.min_votes, official.allow_unanswerable
     qs = {q["id"]: q for q in load_jsonl(root / "questions.jsonl")}
     by_id: dict[str, dict] = {}
     for p in args.logs:
@@ -95,9 +115,23 @@ def main():
             src[s] += 1
             types[row["type"]] += 1
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    print(f"policy={args.policy} m={args.m} unanswerable={'on' if args.unanswerable else 'off'}")
+    mode = "experiment" if args.experiment else "official"
+    print(f"{mode}: policy={args.policy} m={args.m} unanswerable={'on' if args.unanswerable else 'off'}")
     print("source: " + "  ".join(f"{k}={v}" for k, v in src.most_common()))
     print("type:   " + "  ".join(f"{k}={v}" for k, v in types.most_common()))
+    if not args.experiment:
+        try:
+            commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True,
+                                    text=True, check=True).stdout.strip()
+            dirty = bool(subprocess.run(["git", "status", "--porcelain", "--", "src", "eval"], cwd=ROOT,
+                                        capture_output=True, text=True).stdout.strip())
+        except (OSError, subprocess.CalledProcessError):
+            commit, dirty = "unknown", True
+        meta = {"mode": mode, "commit": commit, "dirty_src": dirty, "config": asdict(official), "reexec": args.reexec,
+                "logs": [str(p) for p in args.logs], "source": dict(src), "type": dict(types)}
+        Path(str(out) + ".meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf8")
+        if dirty:
+            print("WARNING: src/ or eval/ has uncommitted changes: commit before submitting (D21)")
     print(f"-> {out}")
 
 

@@ -64,11 +64,13 @@ lần chạy GPU vẫn áp dụng được:
 ```bash
 for i in 0 1 2; do unzip -o datamate_public_*_shard${i}of3.zip -d eval/runs/public_pub1; done
 PYTHONPATH=src .venv/Scripts/python eval/resubmit_agent.py eval/runs/public_pub1/shard*/log.jsonl \
-    --data data/public_test/public_test --policy agree --m 2 --reexec --out eval/runs/public_pub1/submission.jsonl
+    --data data/public_test/public_test --reexec --out eval/runs/public_pub1/submission.jsonl
 ```
 
-Công cụ chỉ in số đếm (nguồn, type). Câu thiếu log được ghi abstain. Đổi `--policy/--m` để sinh nhiều bản nộp mà
-không cần GPU.
+Công cụ chỉ in số đếm (nguồn, type). Câu thiếu log được ghi abstain. **Luồng chính thức (D21)**: policy/m lấy từ
+`AgentConfig` đã commit (chọn trên train), không nhận `--policy/--m`, và ghi `submission.jsonl.meta.json` (commit,
+config, số đếm). Thử cấu hình khác chỉ qua `--experiment` trên train; công cụ từ chối `--experiment` trên public.
+Mỗi lần chạy GPU trên public chỉ nộp **một** bản chính thức.
 
 ## Chọn model
 
