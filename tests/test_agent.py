@@ -151,3 +151,44 @@ def test_helpers_find_products_raw_and_partial_names():
     assert [r["key"] for r in h.find_products("thép cuộn phi 6")] == ["SP2"]
     hits = h.find_products("thép cuộn")
     assert [r["key"] for r in hits] == ["SP2", "SP3"] and all(r["ambiguous"] for r in hits)
+
+
+def test_in_period_scalar_and_series():
+    import pandas as pd
+    from datetime import date
+    from datamate.agent.helpers import Helpers
+    p = {"start": date(2026, 7, 1), "end": date(2026, 7, 31)}
+    assert Helpers.in_period(pd.Timestamp("2026-07-31 18:30"), p) is True     # .apply(lambda x: H.in_period(x, p))
+    assert Helpers.in_period(date(2026, 8, 1), p) is False
+    assert Helpers.in_period(None, p) is False
+    s = pd.Series(pd.to_datetime(["2026-06-30", "2026-07-01", None]))
+    assert Helpers.in_period(s, p).tolist() == [False, True, False]
+
+
+def test_merge_coalesces_identical_overlap():
+    import pandas as pd
+    from datamate.agent.sandbox import coalesce_suffixes
+    orders = pd.DataFrame({"order_id": [1, 2], "order_date": pd.to_datetime(["2026-01-01", "2026-01-02"]),
+                           "status": ["done", "cancelled"]})
+    lines = pd.DataFrame({"order_id": [1, 1, 2], "order_date": pd.to_datetime(["2026-01-01"] * 2 + ["2026-01-02"]),
+                          "status": ["ok", "ok", "ok"], "amount": [5, 7, 9]})
+    m = coalesce_suffixes(lines.merge(orders, on="order_id"))
+    assert "order_date" in m.columns and "order_date_x" not in m.columns   # same values -> one column
+    assert {"status_x", "status_y"} <= set(m.columns)                       # differing values stay apart
+    left = coalesce_suffixes(lines.merge(orders.iloc[:1], on="order_id", how="left"))
+    assert left["order_date"].notna().all()                                 # NaN side filled from the other
+
+
+@needs_data
+def test_sandbox_merge_overlap_runs():
+    code = """
+def solve(T, H):
+    m = T["lines"].merge(T["orders"], on="order_id")
+    return {"type": "number", "answer": int(m["order_date"].notna().sum())}
+"""
+    sb = ShopSandbox(ROOT, SHOP, ROOT / "rulebook.md", 60)
+    try:
+        status, val = sb.run(Job(code, "2026-01-01", "x"))
+    finally:
+        sb.close()
+    assert status == "ok", val

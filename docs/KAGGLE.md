@@ -41,6 +41,35 @@ PYTHONPATH=src .venv/Scripts/python eval/calibrate_agent.py eval/runs/kaggle_<mo
 
 `THINKING = True` bật thinking mode của Qwen3 (đặt `MAX_TOKENS = 6144`). Khoá replay và tên zip có hậu tố `-think`.
 
+## Chạy trên public (sinh submission)
+
+Notebook: `scripts/kaggle/datamate_public.ipynb`. Public chỉ dùng để sinh submission (CLAUDE.md luật 1): không mở
+`log.jsonl`/`replay.jsonl` để đọc câu hỏi hay output, chỉ xử lý bằng script đếm/gộp.
+
+1. **Dataset private** `datamate-public`: upload thư mục `data/public_test/public_test` (105 MB), **Visibility: Private**.
+2. Import notebook, GPU T4 x2, Internet On, Add Input → `datamate-public`. Nhánh `feat/llm-parser` phải đã push
+   (cell clone kiểm `coalesce_suffixes`).
+3. Ở mỗi lần chạy, đặt `SHARD = 0..NSHARDS-1` (mặc định `NSHARDS = 3`, khoảng 330 câu mỗi shard). Shop được chia
+   cân theo số câu, tất định, nên mọi tài khoản tính ra cùng một cách chia. Ở dev, T4 chạy khoảng 83 giây/câu, nên
+   mỗi shard mất khoảng 6–8 giờ, dưới giới hạn 12 giờ. Mỗi phút cell chạy chính in số câu đã xong kèm thời gian ước
+   tính còn lại; ước tính chỉ nhảy sau mỗi shop vì câu của một shop được gửi model cùng một lượt.
+4. Chạy bằng **Save Version → Save & Run All (Commit)**. Các shard chạy song song được trên tài khoản của từng thành
+   viên.
+5. Bị ngắt giữa chừng: Add Input → output của lần chạy đó (có `replay.jsonl`) rồi chạy lại cùng `SHARD`. Shop nào
+   đã có trong replay sẽ không gọi GPU nữa. Notebook zip kết quả dở dang mỗi `ZIP_EVERY_MIN` phút.
+
+Lead gộp các shard trên CPU. `--reexec` chạy lại code đã ghi bằng sandbox/helper hiện tại, nên các bản sửa CPU sau
+lần chạy GPU vẫn áp dụng được:
+
+```bash
+for i in 0 1 2; do unzip -o datamate_public_*_shard${i}of3.zip -d eval/runs/public_pub1; done
+PYTHONPATH=src .venv/Scripts/python eval/resubmit_agent.py eval/runs/public_pub1/shard*/log.jsonl \
+    --data data/public_test/public_test --policy agree --m 2 --reexec --out eval/runs/public_pub1/submission.jsonl
+```
+
+Công cụ chỉ in số đếm (nguồn, type). Câu thiếu log được ghi abstain. Đổi `--policy/--m` để sinh nhiều bản nộp mà
+không cần GPU.
+
 ## Chọn model
 
 Chạy cùng `PER_SHOP` cho từng ứng viên ≤ 15B (ngày public < 26/10/2026, license cho phép), so trong `calibrate_dev.txt`:

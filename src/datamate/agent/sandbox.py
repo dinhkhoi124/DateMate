@@ -60,6 +60,51 @@ class Job:
     question: str = ""   # raw text, for catalog lookup (helpers.Helpers._find)
 
 
+def coalesce_suffixes(df, suffixes=("_x", "_y")):
+    """After a merge, fold each `c_x`/`c_y` pair back into `c` when the two never disagree (NaN on one side is
+    filled from the other). T['lines'] and T['orders'] both carry e.g. `order_date`, so a plain
+    `lines.merge(orders, on='order_id')` would otherwise rename it and the model's `df['order_date']` raises
+    KeyError. Pairs that really differ are left untouched."""
+    sx, sy = suffixes
+    for cx in [c for c in df.columns if isinstance(c, str) and c.endswith(sx)]:
+        base = cx[: -len(sx)]
+        cy = base + sy
+        if not base or cy not in df.columns or base in df.columns:
+            continue
+        a, b = df[cx], df[cy]
+        both = a.notna() & b.notna()
+        try:
+            same = bool((a[both] == b[both]).all())
+        except (TypeError, ValueError):
+            continue
+        if not same:
+            continue
+        pos = list(df.columns).index(cx)
+        merged = a.where(a.notna(), b)
+        df = df.drop(columns=[cx, cy])
+        df.insert(pos, base, merged)
+    return df
+
+
+def install_merge_coalesce():
+    """Worker process only: pd.merge / DataFrame.merge called with default suffixes go through coalesce_suffixes."""
+    import pandas as pd  # noqa: PLC0415
+    if getattr(pd.merge, "_datamate", False):
+        return
+    orig_fn, orig_m = pd.merge, pd.DataFrame.merge
+
+    def merge(*a, **kw):
+        out = orig_fn(*a, **kw)
+        return coalesce_suffixes(out) if "suffixes" not in kw else out
+
+    def df_merge(self, *a, **kw):
+        out = orig_m(self, *a, **kw)
+        return coalesce_suffixes(out) if "suffixes" not in kw else out
+
+    merge._datamate = df_merge._datamate = True
+    pd.merge, pd.DataFrame.merge = merge, df_merge
+
+
 # --------------------------------------------------------------------------- worker side
 def _load_shop(root: str, biz: str, rulebook: str | None):
     from datamate.agent.tables import shop_tables  # noqa: PLC0415
@@ -68,6 +113,7 @@ def _load_shop(root: str, biz: str, rulebook: str | None):
 
 def _worker(conn, root: str, biz: str, rulebook: str | None):
     from datamate.agent.answer import canon  # noqa: PLC0415
+    install_merge_coalesce()
     try:
         T, make_h = _load_shop(root, biz, rulebook)
     except Exception:  # noqa: BLE001

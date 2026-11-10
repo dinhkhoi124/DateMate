@@ -72,10 +72,16 @@ class Helpers:
         return _p(same_period_last_year(Period(p["start"], p["end"], p.get("kind", "range"), p.get("label", ""))))
 
     @staticmethod
-    def in_period(s: pd.Series, p: dict) -> pd.Series:
-        """Boolean mask: dates/datetimes of `s` fall inside p (inclusive, by calendar day)."""
-        d = pd.to_datetime(s, errors="coerce").dt.normalize()
-        return (d >= pd.Timestamp(p["start"])) & (d <= pd.Timestamp(p["end"]))
+    def in_period(s, p: dict):
+        """Boolean mask: dates/datetimes of `s` fall inside p (inclusive, by calendar day). A single value (models
+        often call it inside `.apply(lambda x: H.in_period(x, p))`) gives a plain bool; unparseable -> False."""
+        lo, hi = pd.Timestamp(p["start"]), pd.Timestamp(p["end"])
+        if not isinstance(s, (pd.Series, pd.Index, list, tuple)):
+            d = pd.to_datetime(s, errors="coerce")
+            return bool(pd.notna(d) and lo <= d.normalize() <= hi)
+        d = pd.to_datetime(pd.Series(s) if isinstance(s, (list, tuple)) else s, errors="coerce")
+        d = d.normalize() if isinstance(d, pd.DatetimeIndex) else d.dt.normalize()
+        return (d >= lo) & (d <= hi)
 
     @staticmethod
     def days(start: date, end: date) -> list[date]:
