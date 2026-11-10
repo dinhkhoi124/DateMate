@@ -4,6 +4,47 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D23 — Siết luật dùng public theo FAQ BTC; tái lập trên 2× 5090 là điều kiện nộp image (2026-11-10)
+- **Bối cảnh:** BTC gửi FAQ chung của track (bản lưu cục bộ `thele/ZALO-AI-CHALLENGE-2026.docx`, không commit). Các ý
+  liên quan DataMate:
+  - *"Tập public test không được sử dụng để train model và không được sử dụng trong quá trình inference. **Kể cả việc
+    xử lý tập public test để tạo ra thông tin train khác.**"* Câu này chặt hơn câu trả lời trước đó (SPEC §7.4: được
+    xem cấu trúc dữ liệu public), mà D11 mục 1 và D20 mục 4 đang dựa vào.
+  - Được đóng gói rulebook **train** trong Docker để phát hiện luật đổi lúc chạy. Không dùng rulebook public.
+  - Tái lập |ΔPA| ≤ 0.03: BTC chạy trên **2× 5090**, chạy lần 2 nếu lần 1 không khớp, không sửa code của đội. Batch
+    hay tuần tự là việc của đội.
+  - Docker nộp tối đa 2 lần trước 16/11, lấy lần cuối, **BTC không chạy thử trước**. Test Solution 1 lượt/ngày, đóng
+    23:59 ngày 15/11. Vòng private phải chạy bằng đúng Docker cuối cùng đã nộp.
+  - Log: câu trả lời bằng code thuần (không qua LLM) được để `code`/`output` rỗng. Hoà điểm thì xét thời gian inference.
+  - Dữ liệu cuộc thi không được dùng cho mục đích khác sau cuộc thi.
+- **Lựa chọn:**
+  1. **Thu hồi D20 mục 4 và quyền "xem cấu trúc public" của D11 mục 1.** Với public chỉ được: chạy hệ thống đã
+     commit để sinh `submission.jsonl` (Kaggle shard, `resubmit_agent.py` luồng chính thức, image), `/submit-check`
+     kiểm format, và nhận điểm leaderboard để theo dõi (D21). Không khảo sát cấu trúc file/README public, không phân
+     tích log public (kể cả số đếm lỗi, timeout, phân bố type) để định hướng sửa code. Chẩn đoán chỉ làm trên train
+     (dev, holdout tổng hợp, synth).
+  2. Rà soát: từ D20 đến nay `src/datamate/ingest` và `normalize` không có commit nào, nên D20 mục 4 chưa được dùng.
+     Dưới D11 có commit `aef6e9e` (05/11, từ vựng trạng thái `ingest/values.py`) làm ngay sau khi public v0.5 báo 2
+     shop `status_unrecognized`. Commit ghi là nhãn của phần mềm bán hàng khác, đo trên synth `status_words` của dev,
+     nhưng không có nhật ký xem public (D11 yêu cầu mà không ghi). Lúc đó BTC đã cho phép (SPEC §7.4). Giữ hay gỡ do
+     lead quyết, xem Hệ quả.
+  3. **Tái lập là điều kiện nộp image LLM:** trước khi nộp Solution, chạy cùng image 2 lần trên 2× 5090 với cùng
+     `/data` (train), ΔPA ≤ 0.03 (mục tiêu ≤ 0.01 để chừa biên cho private). Không đạt thì làm ổn định trước (thứ tự và
+     batch cố định, seed theo từng câu, giảm nhiệt độ hoặc greedy) và đo lại trên train, không nộp image chưa đo.
+  4. **Thứ tự nộp image:** mọi image dùng Test Solution trước. Solution chính thức lần 1 chỉ là image đã qua Test
+     Solution; lần 2 (cuối) là bản được tính, nên lần 2 phải là image đã qua cả Test Solution và kiểm tái lập.
+  5. Kaggle dataset chứa train/public để private và xoá sau cuộc thi. Repo public không chứa dữ liệu thi (hook
+     `check_leak` giữ nguyên).
+- **Lý do:** FAQ là câu trả lời mới nhất và chặt nhất của BTC; vi phạm luật dữ liệu có thể bị loại, còn lợi ích từ
+  việc xem public là nhỏ. Khác biệt trên 0.03 giữa hai lần chạy là bị loại, và BTC không chạy thử trước.
+- **Hệ quả:**
+  - SPEC §4/§5/§7.4 cập nhật theo FAQ. PLAN: bước nộp public v2 bỏ phân tích log public; mục 5090 2 lần thành điều
+    kiện bắt buộc.
+  - Mở: giữ hay gỡ `aef6e9e`. Gỡ thì dev/holdout không đổi (dev fingerprints không đổi lúc thêm), chỉ mất phủ trên
+    synth `status_words` (22/24 → 0/24 shop, đều abstain, 0 sai).
+  - Chưa có số về độ ổn định 2 lần của agent (k=5, temperature 0.7, seed cố định). Mức lệch ~22/72 câu giữa các lượt
+    Kaggle trước là giữa các prompt khác nhau, không dùng làm số đo tái lập.
+
 ### D22 — Image LLM chạy agent D20 với Qwen3-14B-AWQ (2026-11-10)
 - **Bối cảnh:** `Dockerfile.llm` còn cấu hình D14: bật parser intent, few-shot bắt buộc, `Qwen3-14B` BF16, max len
   12288. Mọi số đo của agent (Kaggle v2/v3, CPU reexec) đều trên `Qwen3-14B-AWQ`, fp16, không thinking, k=5. Mốc 12/11
@@ -38,7 +79,7 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   nếu holdout nói khác thì đổi theo holdout, không theo public. Docker image dùng cùng mặc định nên bản nộp image và
   jsonl nhất quán.
 
-### D20 — Đổi trục: agent sinh code là đường chính, rule parser là đường nhanh + kiểm tra chéo; được xem cấu trúc dữ liệu public (2026-11-09)
+### D20 — Đổi trục: agent sinh code là đường chính, rule parser là đường nhanh + kiểm tra chéo; được xem cấu trúc dữ liệu public (2026-11-09) — mục 4 Superseded by D23
 - **Bối cảnh:**
   - Public v0.7 = 0.114: trả lời 210/1000 (precision ~77%). Abstain 790 = gate từ lạ 460, rule parser không khớp 155,
     bất biến ingest 120, executor 55 (đếm từ log, không đọc câu). ≥ 17 đội đạt 1.0 trên public.
@@ -274,7 +315,7 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   - `elapsed_ms` của câu đầu mỗi shop gồm cả thời gian ingest.
   - Image LLM sẽ đổi base sang CUDA ≥ 12.8 + vLLM, giữ nguyên layout `/code`.
 
-### D11 — Giới hạn dùng public; ingest tự kiểm tra, không chạy theo lỗi từng shop public (2026-11-05) — mục 3 (tần suất nộp) Superseded by D16
+### D11 — Giới hạn dùng public; ingest tự kiểm tra, không chạy theo lỗi từng shop public (2026-11-05) — mục 3 (tần suất nộp) Superseded by D16; quyền xem cấu trúc public ở mục 1 Superseded by D23
 - **Bối cảnh:** sau public v0.4 vẫn còn 107 câu abstain do không nhận ra bảng đơn (2 shop). Proxy synth đã sạch (6 transform đều 24/24) nhưng không tái hiện được kiểu dữ liệu của 2 shop này. BTC xác nhận được xem cấu trúc dữ liệu public để cải thiện bộ đọc (`SPEC.md` §7 câu 4). Rủi ro còn lại là overfit: sửa cho đúng 14 shop public trong khi private là shop mới. Các câu abstain đó vẫn an toàn (được 0 điểm). Mối nguy thật là câu ingest đọc sai mà vẫn trả lời (bị −1).
 - **Lựa chọn:**
   1. Không tối ưu theo từng lỗi public. Được xem cấu trúc public (tên file, sheet, header, README), nhưng chỉ để rút ra **kiểu dữ liệu**, không phải bản sửa cho một shop. Không đọc giá trị ô hay câu hỏi để viết luật (luật 1 vẫn giữ). Ghi lại mỗi lần xem: shop nào, xem gì.

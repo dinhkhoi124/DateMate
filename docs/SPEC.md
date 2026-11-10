@@ -78,7 +78,7 @@ Mỗi dòng submission: `{"id": "...", "type": "...", "answer": ...}`.
 | Được dùng      | Tập train, dữ liệu tự sinh, tài nguyên public hợp lệ                                              |
 | Code           | Phải public qua forum chính thức (quy định 8.2)                                                   |
 
-**Quy ước nội bộ:** không đọc câu hỏi public để viết luật hay prompt. Public chỉ dùng để nộp kiểm tra.
+**Quy ước nội bộ (D23):** không đọc câu hỏi, rulebook, cấu trúc file hay log của public để viết luật, prompt hay sửa code. Public chỉ dùng để sinh submission (`/submit-check` kiểm format) và nhận điểm. Được đóng gói rulebook train trong Docker để phát hiện luật đổi lúc chạy (FAQ).
 
 ## 5. Nộp bài
 
@@ -89,6 +89,7 @@ Mỗi dòng submission: `{"id": "...", "type": "...", "answer": ...}`.
   - Container đọc `/data` (read-only) và ghi `/result/submission.jsonl` theo kiểu **stream từng câu**.
   - BTC chạy lại image; điểm chạy lại chỉ được lệch **≤ 0.03** so với điểm bạn upload.
   - Cấu trúc `/data` lúc chấm: giống thư mục split, đã xác minh theo Docker Guide §3.1 (xem §7 câu 2).
+  - FAQ (D23): BTC chạy lại trên **2× 5090**, chạy lần 2 nếu lần 1 không khớp, không sửa code; batch hay tuần tự do đội quyết. Không chạy thử trước khi nhận Docker, chỉ có Test Solution (1 lượt/ngày, đóng 15/11 23:59). Private phải chạy bằng Docker cuối cùng đã nộp. Hoà điểm xét thời gian inference.
   - Lệch quá 0.03: BTC xem log trong image, có thể chạy thêm lần nữa và hỏi đội. Không giải thích được thì loại. Chạy quá 6 giờ thì chỉ chấm các câu đã ghi, phần còn lại tính là abstain.
 
 ## 6. Timeline (GMT+7)
@@ -147,7 +148,8 @@ Mốc tuổi model là 26/10/2026, không phải 01/10 như nguồn cộng đồ
 Image Docker phải chứa cả code train, dữ liệu train và manifest checksum, dung lượng tối đa 100 GB khi chưa nén.
 Với câu hỏi xếp hạng: hoà thì sắp theo mã tăng dần. Câu nào hoà ngay tại ranh giới top-k đã bị BTC loại khỏi bộ test.
 
-4. "Có được xem cấu trúc dữ liệu public để cải thiện bộ đọc không" Câu trả lời: chắn chắn có nhé.
+4. ~~"Có được xem cấu trúc dữ liệu public để cải thiện bộ đọc không" Câu trả lời: chắn chắn có nhé.~~
+   **Thay bằng FAQ BTC (10/11, D23):** "Tập public test không được sử dụng để train model và không được sử dụng trong quá trình inference. Kể cả việc xử lý tập public test để tạo ra thông tin train khác." Public chỉ để sinh submission và nhận điểm.
 
 ---
 
