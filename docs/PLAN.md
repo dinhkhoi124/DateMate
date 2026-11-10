@@ -6,7 +6,8 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 
 | Chỉ số | Cách đo | Ngưỡng |
 |---|---|---|
-| **PA public** (từ 07/11, D16) | nộp phiên bản hệ thống hoàn chỉnh mỗi milestone (≤ 2 lượt/ngày), loại model "<=15B". **Thước đo khả thi chính**. Không nộp bản chỉ khác ở một nhóm câu nhỏ (Rule 6) | tăng qua mỗi milestone; precision ước tính ≥ 90% |
+| PA public (D16, sửa theo D21) | mỗi lần chạy GPU trên public nộp **một** bản, sinh bằng cấu hình đã commit, loại model "<=15B". **Chỉ để theo dõi**: không dùng để chọn hay tối ưu cấu hình, prompt, luật (CLAUDE.md luật 8) | ghi vào bảng "Nộp public" |
+| **PA code-gen một mình trên dev** (từ 09/11, D20) | `eval/calibrate_agent.py` trên trace Kaggle (hoặc trace chạy lại trên CPU). **Thước đo ra quyết định chính** cho agent: trên public, rule gần như bị chặn | tăng qua mỗi vòng; precision ≥ 85% |
 | **PA proxy shop lạ** (từ 04/11) | shop tổng hợp từ train, đổi schema/cách ghi (`eval/synth/`). Thước đo để ra quyết định hằng ngày (không tốn lượt nộp) | tăng đều; precision ≥ 90% |
 | **Ingest shop lạ** | đo riêng: Store dựng từ shop tổng hợp so với Store gốc (đơn, dòng, tiền, trạng thái, ngày) | ≥ 95% số chỉ số khớp |
 | PA holdout | 6 shop train giữ lại, không nhìn khi viết code. Chỉ dùng làm **regression check**, không tối ưu thêm | không giảm > 0.02 |
@@ -27,16 +28,21 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 - [x] Khung agent code-gen trên CPU: `src/datamate/agent/` (context builder, helper, sandbox, bỏ phiếu, log), backend giả, test
 
 **10/11**
-- [ ] Notebook Kaggle (private dataset = train): vLLM + model ≤ 15B bản 4-bit, chạy agent trên 100–200 câu dev
-   - [x] (09/11) `scripts/kaggle/datamate_dev.ipynb` + `docs/KAGGLE.md`, `run_eval --per-shop/--trace`, `eval/calibrate_agent.py` (re-vote m × policy trên CPU). Chưa chạy trên Kaggle
-- [ ] Chọn model: 2–3 ứng viên ≤ 15B (ngày public < 26/10/2026, license) trên cùng 100 câu dev: PA, precision, giây/câu
+- [x] Notebook Kaggle (private dataset = train): vLLM + Qwen3-14B-AWQ, agent trên 72 câu dev (3 câu/shop)
+   - [x] (09/11) `scripts/kaggle/datamate_dev.ipynb` + `docs/KAGGLE.md`, `run_eval --per-shop/--trace`, `eval/calibrate_agent.py` (re-vote m × policy trên CPU)
+   - [x] Kaggle v1 → v2 → v3 (prompt v3): code-gen một mình 0.097 → 0.597 → 0.639; sửa CPU (`in_period` vô hướng, gộp `merge` `_x/_y`) → **0.653** (m=2)
+- [ ] Chọn model: 2–3 ứng viên ≤ 15B trên cùng câu dev. Mới đo Qwen3-14B-AWQ; image chốt AWQ theo D22, đổi model phải đo lại trên train
+- [x] D21: tách luồng nộp chính thức khỏi thử nghiệm (`resubmit_agent.py` official/`--experiment`), `AgentConfig.min_votes` 4 → 2 theo dev
+- [x] Notebook public chia shard (`scripts/kaggle/datamate_public.ipynb`, resume bằng replay) + `eval/resubmit_agent.py`. Shard 0 đang chạy
+- [x] D22: `Dockerfile.llm` theo agent D20 (Qwen3-14B-AWQ fp16, TP=2, max len 20480, bỏ few-shot), build kiểm không weights trên CPU
 
 **11/11 — Go/no-go**
 - [ ] Full dev + holdout + rulebook tổng hợp (cosmetic/semantic), calibrate k/m và chính sách rule × code-gen. Precision ≥ 90%
-- [ ] Nộp public jsonl v2 (Kaggle sinh). So 0.114
+   - [ ] Holdout agent (chỉ số tổng) để xác nhận m=2 (D21 hệ quả): một lượt Kaggle riêng
+- [ ] Nộp public jsonl v2: gộp 3 shard bằng `resubmit_agent.py` (luồng chính thức, `--reexec`), nộp một bản, ghi bảng "Nộp public"
 
 **12/11**
-- [ ] **[5090]** Build image LLM (base vLLM 0.10.1.1, weights trong image, TP=2), `check_image.sh`, Test Solution #2
+- [ ] **[5090]** Build image LLM theo D22 (`docs/GPU_RUNBOOK.md` 6b), `check_image.sh`: giây/câu (giới hạn 6 giờ), AWQ + prefix cache trên sm120, chạy 2 lần lệch ≤ 0.03. Test Solution #2
 
 **13–15/11**
 - [ ] Sửa theo nhóm lỗi dev/holdout (không theo public), tối ưu tốc độ ≤ 30 s/câu, Test Solution mỗi ngày

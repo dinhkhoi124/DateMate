@@ -4,6 +4,21 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D22 — Image LLM chạy agent D20 với Qwen3-14B-AWQ (2026-11-10)
+- **Bối cảnh:** `Dockerfile.llm` còn cấu hình D14: bật parser intent, few-shot bắt buộc, `Qwen3-14B` BF16, max len
+  12288. Mọi số đo của agent (Kaggle v2/v3, CPU reexec) đều trên `Qwen3-14B-AWQ`, fp16, không thinking, k=5. Mốc 12/11
+  phải có image chạy được. Model phải công bố trước 26/10/2026 và có license phù hợp: Qwen3-14B-AWQ công bố năm 2025 (bản gốc Qwen3 ra 04/2025), Apache-2.0.
+- **Lựa chọn:** image bật `DATAMATE_AGENT=codegen`, `MODEL=Qwen3-14B-AWQ`, `DTYPE=float16`, TP=2, `MAX_LEN=20480`,
+  `GPU_UTIL=0.90`, thinking tắt, prefix caching bật. k/m/policy lấy từ mặc định `AgentConfig` (D21), không đặt bằng
+  env. Bỏ bước kiểm few-shot (đường agent không dùng). Build chạy một bước kiểm cấu hình agent (import sandbox/helper,
+  `AgentConfig.enabled`, `max_model_len ≥ 16384`).
+- **Lý do:** chỉ đóng gói cấu hình đã đo. BF16 hoặc FP8 vừa 2× 5090 và có thể tốt hơn, nhưng chưa có số dev/holdout.
+  Đổi model phải đo lại trên train (D21) trước.
+- **Hệ quả:**
+  - **[5090]** Cần kiểm: AWQ trên sm120 (vLLM V1 chọn kernel awq_marlin), prefix caching, số giây/câu (giới hạn
+    6 giờ cho private), và chạy 2 lần lệch ≤ 0.03 (lấy mẫu có seed).
+  - Rule-only fallback giữ nguyên khi không load được model.
+
 ### D21 — Tách luồng nộp chính thức khỏi thử nghiệm; không dùng điểm public để chọn hay tối ưu cấu hình (2026-11-10)
 - **Bối cảnh:** `eval/resubmit_agent.py` dựng submission public từ log GPU trên CPU, đổi được policy/m tuỳ ý. Một
   đề xuất trước đó là nộp nhiều biến thể (agree/codegen) rồi so điểm public, tức là chọn cấu hình theo điểm public. Làm

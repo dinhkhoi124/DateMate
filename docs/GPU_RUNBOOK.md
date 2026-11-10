@@ -180,12 +180,13 @@ lấy 5 mẫu mỗi câu cho self-consistency.
 ## 6b. Build và kiểm image LLM (chỉ khi lead nhắn, sau khi đã chọn model)
 
 Cần Docker + NVIDIA Container Toolkit (`docker run --rm --gpus all ubuntu nvidia-smi` phải thấy GPU), ổ trống ≥ 80 GB.
-Lead báo `<model>` và tên tag. Few-shot phải có sẵn và đúng sha (mục 3), nếu không build sẽ dừng.
+Model của image là `Qwen3-14B-AWQ` (D22): `hf download Qwen/Qwen3-14B-AWQ --local-dir models/Qwen3-14B-AWQ`.
+Image bật agent sinh code (D20), không cần few-shot. Lead báo tên tag.
 
 ```bash
 git pull
 docker build --platform linux/amd64 -f docker/Dockerfile.llm \
-  --build-context weights=models/<model> --build-arg MODEL=<model> -t zaic2026_datamate_<team>:final .
+  --build-context weights=models/Qwen3-14B-AWQ --build-arg MODEL=Qwen3-14B-AWQ -t zaic2026_datamate_<team>:final .
 # 2 GPU (giống máy chấm):
 bash scripts/gpu/check_image.sh zaic2026_datamate_<team>:final data/train/train
 # 1 GPU: GPUS=0 TP=1 bash scripts/gpu/check_image.sh ...
