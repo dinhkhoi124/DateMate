@@ -41,7 +41,7 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
    - [ ] Holdout agent (chỉ số tổng) để xác nhận m=2 (D21 hệ quả): một lượt Kaggle riêng
 - [ ] Nộp public jsonl v2: gộp 3 shard bằng `resubmit_agent.py` (luồng chính thức, `--reexec`), `/submit-check`, nộp một bản, ghi bảng "Nộp public". Không phân tích log public (D23)
 - [ ] Test Solution #1 (rule-only, tar sẵn) dùng lượt hôm nay: còn 6 lượt đến 15/11
-- [ ] D23 mở: giữ hay gỡ `aef6e9e` (từ vựng trạng thái)
+- [x] D23: gỡ `aef6e9e` (từ vựng trạng thái); dev/holdout/agent không đổi
 
 **12/11**
 - [ ] **[5090]** Build image LLM theo D22 (`docs/GPU_RUNBOOK.md` 6b), `check_image.sh`: giây/câu (giới hạn 6 giờ), AWQ + prefix cache trên sm120, chạy 2 lần lệch ≤ 0.03 (**điều kiện nộp image**, D23; mục tiêu ≤ 0.01). Test Solution #2

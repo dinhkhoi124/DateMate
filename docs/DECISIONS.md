@@ -40,8 +40,9 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 - **Hệ quả:**
   - SPEC §4/§5/§7.4 cập nhật theo FAQ. PLAN: bước nộp public v2 bỏ phân tích log public; mục 5090 2 lần thành điều
     kiện bắt buộc.
-  - Mở: giữ hay gỡ `aef6e9e`. Gỡ thì dev/holdout không đổi (dev fingerprints không đổi lúc thêm), chỉ mất phủ trên
-    synth `status_words` (22/24 → 0/24 shop, đều abstain, 0 sai).
+  - **Đã gỡ `aef6e9e`** (lead chọn, 2026-11-10): `git revert` phần code (`ingest/values.py`, synth `status_words`,
+    test). Dev 2410/0/37, holdout 485/10/58, agent code-gen một mình (reexec Kaggle v3) 0.653 m=2: không đổi. Nhãn
+    trạng thái lạ trở lại `status_unrecognized` → bất biến D11 abstain, không trả lời sai.
   - Chưa có số về độ ổn định 2 lần của agent (k=5, temperature 0.7, seed cố định). Mức lệch ~22/72 câu giữa các lượt
     Kaggle trước là giữa các prompt khác nhau, không dùng làm số đo tái lập.
 
