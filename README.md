@@ -165,6 +165,7 @@ thele/                 thể lệ cuộc thi
 | [`docs/PLAN.md`](docs/PLAN.md) | Muốn biết việc đang làm và việc còn mở (checklist theo ngày) |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Muốn biết vì sao làm như vậy (D01–D25) |
 | [`docs/BENCHMARK.md`](docs/BENCHMARK.md) | Benchmark shop tổng hợp (E0): cách đo agent trên shop lạ |
+| [`docs/RESEARCH_BACKLOG.md`](docs/RESEARCH_BACKLOG.md) | Việc nghiên cứu còn lại (E1–E6, S1–S8): trạng thái, cách đo, hạn |
 | [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Muốn xem số liệu từng phiên bản và các lần nộp public |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | Cần biết phân vai, cách dùng GPU (Kaggle / thuê 5090) |
 
