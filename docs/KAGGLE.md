@@ -12,7 +12,7 @@ Kết quả chỉ dùng để chọn model, sửa prompt/helper và calibrate. N
 2. **Notebook**: Code → New Notebook → File → Import Notebook → chọn `scripts/kaggle/datamate_dev.ipynb`.
    - Settings: **Accelerator: GPU T4 x2**, **Internet: On**, notebook **Private**.
    - Add Input → dataset `datamate-train` ở bước 1.
-3. Code được `git clone` từ GitHub nhánh `feat/llm-parser`: nhánh phải được push trước khi chạy.
+3. Code được `git clone` từ GitHub nhánh `main` (biến `BRANCH` trong cell cấu hình). Thử nhánh khác thì push nhánh đó rồi sửa `BRANCH`.
 
 ## Chạy
 
@@ -47,7 +47,7 @@ Notebook: `scripts/kaggle/datamate_public.ipynb`. Public chỉ dùng để sinh 
 `log.jsonl`/`replay.jsonl` để đọc câu hỏi hay output, chỉ xử lý bằng script đếm/gộp.
 
 1. **Dataset private** `datamate-public`: upload thư mục `data/public_test/public_test` (105 MB), **Visibility: Private**.
-2. Import notebook, GPU T4 x2, Internet On, Add Input → `datamate-public`. Nhánh `feat/llm-parser` phải đã push
+2. Import notebook, GPU T4 x2, Internet On, Add Input → `datamate-public`. Nhánh `BRANCH` (mặc định `main`) phải đã push
    (cell clone kiểm `coalesce_suffixes`).
 3. Ở mỗi lần chạy, đặt `SHARD = 0..NSHARDS-1` (mặc định `NSHARDS = 3`, khoảng 330 câu mỗi shard). Shop được chia
    cân theo số câu, tất định, nên mọi tài khoản tính ra cùng một cách chia. Ở dev, T4 chạy khoảng 83 giây/câu, nên

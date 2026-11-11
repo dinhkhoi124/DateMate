@@ -37,6 +37,8 @@
 
 ## 3. Phân công nhóm
 
+> **Từ 12/11 phân vai theo `docs/HANDOVER.md` mục 2** (lead cũ rời nhóm). Bảng dưới là phân vai cũ.
+
 | Người | Vai trò | Việc cụ thể |
 |---|---|---|
 | **Khôi** (lead) | AI/kỹ thuật | Duyệt thiết kế, chạy Kaggle, review code, quyết định và ghi vào `DECISIONS.md` |

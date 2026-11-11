@@ -31,3 +31,7 @@ eval/synth/out/
 src/datamate/parse/fewshot.jsonl
 *.jsonl
 *.tgz
+
+# Thể lệ bản gốc (docx/pdf): để trên Drive nhóm, không đưa lên repo public
+thele/*.docx
+thele/*.pdf

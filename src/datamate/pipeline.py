@@ -214,7 +214,7 @@ def answer_many(qs: list[dict], ctx: Context):
                 tb = traceback.format_exc()
                 print(tb, file=sys.stderr)
                 row, tr = abstain(q["id"]), {"thinking": None, "error": tb}
-            yield q, row, {"_t0": t0, **tr}
+            yield q, row, {"_t0": t0, **tr, "timing": {"rule_s": time.perf_counter() - t0}}
         return
     from datamate.agent.agent import combine  # noqa: PLC0415
     by_shop: dict[str, list] = {}
@@ -222,25 +222,27 @@ def answer_many(qs: list[dict], ctx: Context):
         by_shop.setdefault(q["business_id"], []).append(q)
     for biz, group in by_shop.items():
         t0 = time.perf_counter()   # Docker Guide: batched questions count from when they entered the batch
-        rule = []
+        rule, rule_s = [], []
         for q in group:
+            tr0 = time.perf_counter()
             try:
                 rule.append(answer_traced(q, ctx))
             except Exception:  # noqa: BLE001
                 rule.append((abstain(q["id"]), {"thinking": None, "error": traceback.format_exc()}))
+            rule_s.append(time.perf_counter() - tr0)
         try:
             cg = ctx.agent.solve_shop(group, ctx.store(biz))
         except Exception:  # noqa: BLE001
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)
             cg = [(None, {"error": tb})] * len(group)
-        for q, (rrow, rtr), (crow, ctr) in zip(group, rule, cg):
+        for q, (rrow, rtr), (crow, ctr), rs in zip(group, rule, cg, rule_s):
             row, src = combine(rrow, crow, ctx.agent.cfg.policy)
             inputs = dict(rtr.get("inputs") or {})
             inputs.update(source=src, rule_answer={k: v for k, v in rrow.items() if k != "id"},
                           codegen_vote=ctr.get("vote"))
             tr = {"_t0": t0, "thinking": ctr.get("thinking"), "code": ctr.get("code"), "inputs": inputs,
-                  "output": ctr.get("output")}
+                  "output": ctr.get("output"), "timing": {"rule_s": rs, **(ctr.get("timing") or {})}}
             if ctr.get("error"):
                 tr["error"] = ctr["error"]
             yield q, row, tr

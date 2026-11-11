@@ -1,5 +1,7 @@
 # PLAN — Roadmap & checklist
 
+> **11/11: bàn giao cho hai thành viên, xem `docs/HANDOVER.md`** (lịch và cổng chọn image final ở mục 4).
+
 Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạy được** · **Private: đội tự chạy 20/11 09:00 → 23/11 23:59, cần GPU** (D16) · Chi tiết thiết kế: `ARCHITECTURE.md` · Đề bài: `SPEC.md`
 
 ## Mục tiêu đo được

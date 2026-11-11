@@ -68,7 +68,7 @@ Hết VRAM (`CUDA out of memory`): thử `DATAMATE_LLM_GPU_UTIL=0.92`, rồi `DA
 
 ```bash
 git clone https://github.com/dinhkhoi124/DateMate.git && cd DateMate
-git checkout feat/llm-parser          # nhánh lead báo; sau khi merge thì dùng main
+git checkout main                    # hoặc nhánh người phụ trách kỹ thuật báo
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -U pip
 pip install -r docker/requirements.txt   # pandas/numpy… đúng bản máy lead: few-shot sinh ra phải giống hệt

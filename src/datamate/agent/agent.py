@@ -7,6 +7,7 @@ then each sample runs in that shop's sandbox worker. Log fields follow the Docke
 from __future__ import annotations
 
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -47,39 +48,55 @@ class CodeGenAgent:
         """For questions of ONE shop: [(voted row without id or None, trace)]."""
         if not qs:
             return []
+        t0 = time.perf_counter()
         readme, schema = self._shop_text(qs[0]["business_id"], store)
         prompts = [self.prompt(q, readme, schema) for q in qs]
+        t1 = time.perf_counter()
         outs = self.backend.complete(prompts, self.cfg.n_samples, free=True, max_tokens=self.cfg.max_tokens)
+        t2 = time.perf_counter()
         self.calls += len(qs)
         res = []
         for q, raw in zip(qs, outs):
             self.failed += not raw
-            res.append(self._vote(q, raw))
+            row, trace = self._vote(q, raw)
+            # stage timings (benchmark, docs/BENCHMARK.md §4): prompt and generation are per shop batch
+            trace["timing"] = {"prompt_s": (t1 - t0) / len(qs), "gen_batch_s": t2 - t1, "batch_n": len(qs),
+                               **trace.get("timing", {})}
+            res.append((row, trace))
         return res
 
     def _vote(self, q: dict, raw: list[str]) -> tuple[dict | None, dict]:
         sb = self.sandbox(q["business_id"])
         qn = normalize(q["question"])
         codes, results, keys, rows = [], [], [], {}
+        t_val = t_exec = 0.0
         for text in raw:
+            ta = time.perf_counter()
             code = extract_code(text)
+            t_val += time.perf_counter() - ta
             codes.append(code)
             if code is None:
                 results.append({"status": "no_code"})
                 continue
+            ta = time.perf_counter()
             status, val = sb.run(Job(code, q["as_of_date"], qn, q["question"]))
+            t_exec += time.perf_counter() - ta
             results.append({"status": status, "result": val})
             if status == "ok":
                 k = vote_key(val)
                 keys.append(k)
                 rows.setdefault(k, val)
-        trace = {"thinking": list(raw), "code": codes, "output": results}
+        tv = time.perf_counter()
+        trace = {"thinking": list(raw), "code": codes, "output": results,
+                 "timing": {"validate_s": t_val, "exec_s": t_exec}}
         if not keys:
             trace["vote"] = "no valid sample"
+            trace["timing"]["vote_s"] = time.perf_counter() - tv
             return None, trace
         top, votes = sorted(Counter(keys).items(), key=lambda kv: (-kv[1], kv[0]))[0]
         trace["vote"] = f"{votes}/{len(raw)}"
         row = rows[top]
+        trace["timing"]["vote_s"] = time.perf_counter() - tv
         if votes < self.cfg.min_votes or row["type"] == "abstain":
             return None, trace
         if row["type"] == "unanswerable" and not self.cfg.allow_unanswerable:
