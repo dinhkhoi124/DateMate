@@ -37,7 +37,8 @@
 
 ## 3. Phân công nhóm
 
-> **Từ 12/11 phân vai theo `docs/HANDOVER.md` mục 2** (lead cũ rời nhóm). Bảng dưới là phân vai cũ.
+> **Từ 12/11 phân vai theo `docs/HANDOVER.md` mục 2**: Khôi là PM (quyết định cấu hình, image, nộp bài; duyệt PR),
+> Người A làm kỹ thuật, Người B vận hành máy 5090. Bảng dưới là phân vai cũ, chỉ để tham khảo.
 
 | Người | Vai trò | Việc cụ thể |
 |---|---|---|
@@ -53,7 +54,7 @@ TV2 và TV3 không cần biết AI. Chỉ cần dùng Excel, GitHub web và đ�
 **Luồng làm việc (GitHub flow):**
 1. `git checkout main && git pull && git checkout -b <loại>/<việc>`. Loại: `feat/` tính năng, `fix/` sửa lỗi, `qa/` dữ liệu kiểm tra, `docs/`, `chore/` công cụ.
 2. Commit nhỏ, message dạng mệnh lệnh, nói rõ thay đổi (ví dụ `Ingest: read status from Ghi chú column`).
-3. Push và mở PR vào `main`, điền đủ template (kết quả đo + checklist). Mọi PR cần **CI xanh** (GitHub bắt buộc) và **ít nhất 1 người khác review** (quy ước nhóm, GitHub không chặn). Lead được tự động gán làm reviewer qua CODEOWNERS. Không tự merge PR khi chưa ai xem.
+3. Push và mở PR vào `main`, điền đủ template (kết quả đo + checklist). Mọi PR cần **CI xanh** (GitHub bắt buộc) và **ít nhất 1 người khác review** (quy ước nhóm, GitHub không chặn). PM duyệt mọi PR vào `main`. Không tự merge PR khi chưa ai xem.
 4. Merge bằng **Squash and merge**, rồi xoá branch.
 
 **Tự động hoá:**

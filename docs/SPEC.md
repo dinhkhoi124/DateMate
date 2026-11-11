@@ -180,7 +180,7 @@ Yêu cầu Docker
 Hạng mục Yêu cầu
 Base image Khuyến nghị vllm/vllm-openai:v0.10.1.1. Dùng image khác thì phải hỗ trợ RTX 5090 (compute capability 12.0, CUDA ≥ 12.8)
 Platform linux/amd64
-Tag zaic2026_datamate_<team_name>:final (tên đội viết thường)
+Tag zaic2026_datamate_<team_name>:final (tên đội viết thường). Đội AIO_Zalo → `zaic2026_datamate_aio_zalo:final`
 ENTRYPOINT Đặt ENTRYPOINT []. BTC chạy với --entrypoint bash, nên ENTRYPOINT riêng của image sẽ không được dùng
 Biến môi trường HF_HUB_OFFLINE=1, TRANSFORMERS_OFFLINE=1. Nếu cặp GPU không có P2P thì thêm NCCL_P2P_DISABLE=1
 Cấu hình Model, seed, temperature, batch size… phải cố định sẵn trong code. BTC không chỉnh

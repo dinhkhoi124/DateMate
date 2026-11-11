@@ -10,16 +10,90 @@ eval, đọc kết quả).
 
 ---
 
+## 0. Bắt đầu nhanh (làm theo thứ tự, mỗi người một lần, khoảng 30–45 phút)
+
+Tên đội: **AIO_Zalo**. Tag image bắt buộc (viết thường): **`zaic2026_datamate_aio_zalo:final`**.
+
+### 0.1. Cả hai người
+
+1. **Lấy code** (nhánh `main`, luôn làm việc từ đây):
+   ```bash
+   git clone https://github.com/dinhkhoi124/DateMate.git
+   cd DateMate
+   git log --oneline -1          # phải thấy commit mới nhất của main
+   ```
+   Đã clone từ trước thì: `git checkout main && git pull`.
+2. **Cài Python 3.11 và thư viện** (không cần GPU):
+   ```bash
+   # Windows (Git Bash)
+   py -3.11 -m venv .venv
+   .venv/Scripts/python -m pip install -e ".[dev]"
+   .venv/Scripts/pre-commit install          # bắt buộc: chặn commit nhầm dữ liệu thi
+   # Linux / WSL: thay `py -3.11` bằng `python3.11`, `.venv/Scripts/` bằng `.venv/bin/`
+   ```
+3. **Lấy dữ liệu train từ Drive nhóm** (`DataMate/data/train.zip`) và giải nén **vào trong repo**:
+   ```bash
+   mkdir -p data/train
+   unzip train.zip -d data/train     # phải có data/train/train/questions.jsonl và data/train/train/data/biz_101 …
+   ```
+   **Chưa giải nén `public_test.zip`** trừ khi PM yêu cầu sinh file nộp (chỉ Người B). `data/` không bao giờ được commit.
+4. **Kiểm cài đặt đúng.** Hai số dưới phải khớp **chính xác**:
+   ```bash
+   .venv/Scripts/python -m pytest tests -q
+   #   → 210 passed   (chưa giải nén data: 192 passed, 18 skipped → quay lại bước 3)
+   PYTHONPATH=src .venv/Scripts/python eval/run_eval.py --split dev
+   #   → split=dev n=2447 correct=2410 wrong=0 abstain=37 PA=0.9849   (lần đầu 5–8 phút)
+   ```
+   Ra số khác thì **dừng lại**, chụp màn hình gửi nhóm, đừng sửa code để "cho khớp".
+5. **Đọc luật** (10 phút): `CLAUDE.md` (8 luật) và mục 5 của file này. Ba điều dễ phạm nhất:
+   - không mở `data/public_test/**/questions.jsonl`, không xem log hay cấu trúc dữ liệu public (D23);
+   - không mở dữ liệu/câu hỏi 6 shop holdout (`biz_103, 110, 117, 123, 125, 128`);
+   - không chọn cấu hình bằng điểm public (D21).
+6. **Kiểm tài khoản portal** (mục 3b): mở được các mục nộp không, **không bấm nộp**. Báo kết quả vào nhóm.
+
+### 0.2. Người A (kỹ thuật) — việc đầu tiên
+
+- Đọc `docs/ARCHITECTURE.md` mục 8 (agent), `docs/DECISIONS.md` D20–D25, `docs/BENCHMARK.md` mục 7.
+- Chạy thử benchmark ingest (CPU, không cần GPU):
+  ```bash
+  PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py materialize --jobs 2   # 40–50 phút, chạy lại được nếu bị ngắt
+  PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py ingest --jobs 2        # in bảng giống BENCHMARK mục 7
+  ```
+  `materialize` phải in `0 variants differ`. Máy ≤ 16 GB RAM: giữ `--jobs 2` (hoặc 1).
+- Việc tiếp theo theo mục 4 (13–15/11). Mỗi thay đổi `src/`: chạy dev, ghi `EXPERIMENTS.md`, mở PR.
+
+### 0.3. Người B (vận hành, máy 5090) — việc đầu tiên
+
+- Đọc `docs/GPU_RUNBOOK.md` mục 1–3 và 6b, `docker/README.md`.
+- Khi PM nhắn: build image LLM từ commit PM chỉ định (hiện là `97aee0b`) theo mục 4 ngày 12/11, chạy
+  `check_image.sh` **hai lần**, gửi số liệu. **Không upload, không nộp gì** khi PM chưa chọn.
+- Kiểm có sẵn trên Drive tar rule-only `zaic2026_datamate_aio_zalo_final.tar` (MD5 `fb43b6cae2c3eb5132d58077bbc8bf58`): đây là bản final mặc định.
+
+### 0.4. Khi bị kẹt
+
+| Triệu chứng | Cách xử lý |
+|---|---|
+| `py -3.11` không có | Cài Python 3.11 từ python.org (tick "Add to PATH"); kiểm bằng `py -0` |
+| `pytest` ra số khác 210 | 192 passed + 18 skipped = chưa thấy data: kiểm đã giải nén đúng chỗ (`data/train/train/questions.jsonl`) |
+| dev ra số khác 2410/0/37 | Kiểm đang ở `main` mới nhất, đã `pip install -e ".[dev]"` lại sau khi pull |
+| Hết RAM, máy treo, tiến trình bị kill | Bỏ bớt `--jobs`; chạy một shop: `run_eval.py --split dev --only biz_101` |
+| Đầy ổ đĩa | Xoá `cache/` (tự build lại) và `eval/synth/out/` (dựng lại bằng `materialize`) |
+| Git Bash: `docker run ... /code/predict.sh` báo không thấy file | Thêm `MSYS_NO_PATHCONV=1` trước lệnh `docker` |
+| `git commit` bị pre-commit chặn | Đọc dòng báo lỗi: thường là file `data/`, `.jsonl` hay file > 1 MB. Bỏ file đó khỏi commit, **đừng** `--no-verify` |
+| Không chắc một việc có phạm luật không | Hỏi PM trước khi làm |
+
+---
+
 ## 1. Hiện trạng (chốt 11/11)
 
 | Hạng mục | Kết quả | Ở đâu |
 |---|---|---|
 | Pipeline rule-only (không model) | dev **0.985**, holdout **0.859** | `src/datamate/`, chạy CPU |
-| **Image rule-only** | **Test Solution #1: Test passed** (10/11, 11 phút). MD5 `8cf7dec3b6e6383a339921657ab68d8a`, tar 308 MB. **Chưa bấm nộp final**. Mã nguồn: tag `ts1-ruleonly` (`3c5848c`) | Drive nhóm; code: `git checkout ts1-ruleonly` |
+| **Image rule-only** (final mặc định) | Image `sha256:2b324d85…`, code tag `ts1-ruleonly` (`3c5848c`). **Tar dùng để nộp: `zaic2026_datamate_aio_zalo_final.tar`, tag `zaic2026_datamate_aio_zalo:final`, MD5 `fb43b6cae2c3eb5132d58077bbc8bf58`**, 308 MB (11/11: chỉ gắn lại tag tên đội, image không đổi; đã chạy lệnh BTC trên 1 shop dev: 40/40, `submit_check` PASS). **Cần Test Solution cho tar này** (12/11). Tar cũ tag `zaic2026_datamate_test:final` (MD5 `8cf7dec3…`) đã Test passed 10/11 nhưng **sai tên đội, không dùng để nộp** | Drive nhóm; code: `git checkout ts1-ruleonly` |
 | Public v0.7 (rule-only) | **0.114** | `docs/EXPERIMENTS.md` bảng "Nộp public" |
 | Agent code-gen (Qwen3-14B-AWQ, D20/D22) | code-gen một mình: dev 0.653, holdout **0.444** (precision 0.776). Policy `agree` m=2 trên holdout 0.708 (72 câu) | `src/datamate/agent/` |
 | Public v2 (agent, Kaggle) | **0.117** | như trên |
-| **Image LLM** (`docker/Dockerfile.llm`) | **Chưa build trên GPU.** Mới kiểm build không weights trên CPU | `docs/GPU_RUNBOOK.md` mục 6b |
+| **Image LLM** (`docker/Dockerfile.llm`) | **Chưa build có weights, chưa chạy trên GPU.** 11/11: build không weights từ `main` `97aee0b` trên CPU OK, chạy lệnh BTC trên 1 shop dev (không GPU → tự chuyển rule-only) 40/40. Commit build chính thức: `97aee0b` (PM chốt) | `docs/GPU_RUNBOOK.md` mục 6b |
 | Test | 210 passed; ruff sạch | `pytest tests -q` |
 | Benchmark shop tổng hợp E0 (D24) | **Đóng băng và niêm phong** 534 cell (tái lập 0/205 khác). Ingest sau D25: status_newword 100%, status_codes 10/16 A, 5/8 B; layout B và rename_tables A mới phân tích, chưa sửa. **Chưa chạy agent (E2), chỉ chạy sau Test Solution** | `docs/BENCHMARK.md` |
 | Ingest trạng thái (D25) | Trạng thái lạ → `unknown` (không hợp lệ); đọc chú giải trạng thái trong README. Dev, holdout không đổi. **Chưa có trong image rule-only**; PM quyết có đưa vào image LLM không | `docs/DECISIONS.md` D25 |
@@ -45,8 +119,8 @@ Submission) do PM làm hoặc PM xác nhận bằng tin nhắn trước.
 Các mặc định này áp dụng khi PM không trả lời được. Không ai được tự chọn cấu hình khác thay cho PM.
 
 - **Image final:** nếu đến **16/11 18:00** vẫn chưa có quyết định của PM, final = **image rule-only đã qua Test
-  Solution** (MD5 `8cf7dec3b6e6383a339921657ab68d8a`, build từ tag `ts1-ruleonly` = `3c5848c`, tar trên Drive). Không nộp image LLM, kể cả
-  khi nó đã qua cổng, nếu PM chưa chọn.
+  Solution**: tar `zaic2026_datamate_aio_zalo_final.tar`, tag `zaic2026_datamate_aio_zalo:final`, MD5 `fb43b6cae2c3eb5132d58077bbc8bf58` (build từ tag `ts1-ruleonly` = `3c5848c`, trên Drive).
+  Không nộp image LLM, kể cả khi nó đã qua cổng, nếu PM chưa chọn. Không nộp tar cũ MD5 `8cf7dec3…` (sai tên đội).
 - **Người nộp form "Solution Submission":** nếu PM vắng lúc 16/11 18:00, Người B nộp image rule-only ở trên bằng tài
   khoản đã kiểm nộp được (mục 3b), trước 23:59, rồi nhắn nhóm link Drive và MD5 đã nộp.
 - **Public:** khi PM vắng thì không nộp public. Public chỉ để theo dõi (D21), bỏ một lượt không ảnh hưởng điểm.
@@ -58,10 +132,10 @@ Các mặc định này áp dụng khi PM không trả lời được. Không ai
 
 ## 3. Checklist bàn giao (PM làm)
 
-### 3a. Nhánh code (chưa merge)
-- [ ] **Chưa merge** `fix/agent-runtime-errors`. PM duyệt trước: commit history (`git log --oneline main..HEAD`),
-      diff (`git diff --stat main...HEAD`), test (`pytest tests -q`) và CI trên PR. Merge khi PM đồng ý; sau đó
-      **mọi việc làm từ `main`**. Nhánh chưa push lên GitHub: push và mở PR trước khi duyệt
+### 3a. Nhánh code
+- [x] `fix/agent-runtime-errors` merge vào `main` qua PR #8 (11/11, `5e21a8e`), tag ở PR #9. CI `main` xanh. Mọi
+      nhánh cũ khác đã có nội dung trong `main` (trừ nhánh Dependabot, để sau 16/11). Chưa xoá nhánh nào.
+      **Từ giờ mọi việc làm từ `main`**
 - [ ] Thay đổi ingest ngày 11/11 (chú giải trạng thái từ README, trạng thái `unknown`) làm đổi hành vi trên shop có
       trạng thái lạ. Dev không đổi (2410/0/37). PM quyết có đưa vào image LLM hay không. Image rule-only đã qua Test
       Solution build từ tag `ts1-ruleonly` (`3c5848c`) và **không** có thay đổi này
@@ -77,7 +151,7 @@ Các mặc định này áp dụng khi PM không trả lời được. Không ai
 | Hệ thống | Việc cần làm | PM giữ | Người A | Người B |
 |---|---|---|---|---|
 | **GitHub** repo | Mời collaborator; ruleset `protect-main` giữ nguyên; `.github/CODEOWNERS` thêm Người A cạnh `@dinhkhoi124` (PM vẫn duyệt) | Admin | Write | Write |
-| **Drive** thư mục `DataMate/` | Kiểm có: `data/train.zip`, `data/public_test.zip`, tar rule-only (MD5 `8cf7dec3…`), zip Kaggle (`datamate_dev_*`, `datamate_public_*`). Tar image mới upload vào đây | Owner | Viewer | Editor |
+| **Drive** thư mục `DataMate/` | Kiểm có: `data/train.zip`, `data/public_test.zip`, **tar rule-only `zaic2026_datamate_aio_zalo_final.tar` + file `.md5` (MD5 `fb43b6cae2c3eb5132d58077bbc8bf58`)**, zip Kaggle (`datamate_dev_*`, `datamate_public_*`). Tar image mới upload vào đây | Owner | Viewer | Editor |
 | **Kaggle** | Share dataset private `datamate-train`, `datamate-public` (hoặc tạo lại theo `docs/KAGGLE.md`). Mỗi tài khoản 30 giờ GPU/tuần: ghi ai dùng bao nhiêu | Owner dataset | Collaborator | Collaborator |
 | **Portal cuộc thi** | Xác nhận tài khoản nào nộp được public, Test Solution, "Solution Submission" và upload private. **PM nộp**; nếu 20–23/11 PM vắng thì Người B upload private theo tin nhắn xác nhận của PM | Người nộp | – | Dự phòng upload private |
 | **Máy 5090 / GPU thuê** | Đặt lịch 12/11 (build image LLM) và 20–23/11 (private); phương án thuê dự phòng | Duyệt chi phí | – | Quản lý |
@@ -87,6 +161,8 @@ Các mặc định này áp dụng khi PM không trả lời được. Không ai
       được các mục **nộp public**, **Test Solution**, form **"Solution Submission"** và **upload private** không.
       Chỉ mở form để kiểm, **không bấm nộp**. Ghi kết quả (ai nộp được mục nào) vào nhóm chat. Nếu chỉ tài khoản PM
       nộp được thì hỏi BTC cách thêm người nộp, trước 14/11, vì mục "Mặc định khi PM vắng" cần Người B nộp được
+- [ ] **PM upload lên Drive** tar rule-only gắn tag mới: `zaic2026_datamate_aio_zalo_final.tar` và `zaic2026_datamate_aio_zalo_final.tar.md5` (máy PM, thư mục
+      `zaic_submit/`), bật link công khai, rồi tải thử về một máy khác và kiểm MD5 `fb43b6cae2c3eb5132d58077bbc8bf58`
 - [ ] Nhắn nhóm: link file này và lịch mục 4
 
 ---
@@ -96,13 +172,23 @@ Các mặc định này áp dụng khi PM không trả lời được. Không ai
 Hạn cứng: **Test Solution đóng 15/11 23:59 (1 lượt/ngày)** · **Nộp image final 16/11 23:59 (tối đa 2 lần, BTC xét lần
 cuối)** · **Private: 20/11 09:00 → 23/11 23:59, cần GPU** · Public: tối đa 5 lần/ngày, đến 16/11.
 
-### 12/11 — Cài đặt + thử image LLM (Người B, máy 5090; PM chọn commit để build)
-1. Cả hai: cài repo theo `README.md` mục "Cài đặt", chạy `pytest tests -q` (phải xanh) và
-   `eval/run_eval.py --split dev` (phải ra **0.985**). Ra số khác thì dừng, xem lại dữ liệu/phiên bản thư viện.
-2. Người B: build từ **commit PM chỉ định**, làm `docs/GPU_RUNBOOK.md` **mục 2, 3, 6b**: tải `Qwen/Qwen3-14B-AWQ`, build `Dockerfile.llm`, chạy
-   `scripts/gpu/check_image.sh <tag> data/train/train` **hai lần**. Ghi lại: exit code, tổng thời gian, giây/câu,
-   PA train của mỗi lần, độ lệch hai lần.
-3. Gửi các số đó cho PM và Người A (chỉ số, không gửi nội dung câu hỏi).
+### 12/11 — Cài đặt + Test Solution rule-only + thử image LLM
+1. Cả hai: làm mục 0.1 (cài đặt, kiểm 210 test và dev 2410/0/37).
+2. **PM:** upload tar rule-only gắn tag mới lên Drive và nộp **Test Solution** cho nó (lượt của ngày 12/11).
+   Ghi kết quả vào `PLAN.md`. Image không đổi, chỉ đổi tên tag, nên kỳ vọng Test passed như 10/11.
+3. **Người B (máy 5090):** build image LLM từ commit **`97aee0b`** (PM đã chốt):
+   ```bash
+   git fetch && git checkout 97aee0b
+   hf download Qwen/Qwen3-14B-AWQ --local-dir models/Qwen3-14B-AWQ
+   docker build --platform linux/amd64 -f docker/Dockerfile.llm \
+     --build-context weights=models/Qwen3-14B-AWQ --build-arg MODEL=Qwen3-14B-AWQ \
+     -t zaic2026_datamate_aio_zalo:final .
+   bash scripts/gpu/check_image.sh zaic2026_datamate_aio_zalo:final data/train/train      # chạy HAI lần
+   ```
+   Chú ý: image LLM và image rule-only **cùng tên tag**. Trên máy 5090 chỉ build image LLM; tar rule-only để nguyên
+   trên Drive, không `docker load` nó lên cùng máy lúc đang kiểm image LLM.
+4. Người B gửi PM và Người A: exit code, tổng thời gian, giây/câu, PA train của mỗi lần, độ lệch hai lần (chỉ số,
+   không gửi nội dung câu hỏi). **Không upload, không nộp gì.**
 
 ### 13–14/11 — Quyết định image final (PM quyết; Người A chuẩn bị số liệu)
 Image LLM **chỉ được chọn** khi đạt đủ cả ba cổng (D23, luật đề):
@@ -111,7 +197,7 @@ Image LLM **chỉ được chọn** khi đạt đủ cả ba cổng (D23, luật
   **≤ ~40 giây/câu**. Trên Kaggle T4 agent chạy 83 giây/câu, nên phải đo thật trên 5090.
 - PA train của image khớp bản local (kiểm lỗi đóng gói), và **Test Solution passed**.
 
-Không đạt cổng nào thì **final = image rule-only** (đã passed). Không được chọn image bằng cách so điểm public
+Không đạt cổng nào thì **final = image rule-only** (tar `zaic2026_datamate_aio_zalo_final.tar`, MD5 `fb43b6cae2c3eb5132d58077bbc8bf58`). Không được chọn image bằng cách so điểm public
 (CLAUDE.md luật 8, D21).
 
 Nếu image LLM đạt và PM chọn: Người B upload tar lên Drive (30–40 GB, mất nhiều giờ), tính MD5; **PM nộp Test
@@ -134,7 +220,8 @@ Theo thứ tự lợi/công:
 3. Mọi thay đổi code sau khi image đã build thì **phải build lại image và kiểm lại cổng**. Từ 15/11 chỉ sửa lỗi chặn.
 
 ### 16/11 — Nộp final (PM nộp; Người B chuẩn bị tar/MD5, Người A xác nhận số liệu)
-1. PM chốt commit trên `main`, gắn tag `vfinal`.
+1. PM chốt commit trên `main`, gắn tag `vfinal`. Nếu final là image rule-only thì commit là tag `ts1-ruleonly`,
+   tar `zaic2026_datamate_aio_zalo_final.tar`, MD5 `fb43b6cae2c3eb5132d58077bbc8bf58`.
 2. Tar image trên Drive **public link**, MD5 khớp, thử tải về từ một máy khác.
 3. PM nộp form "Solution Submission" **trước 23:59** (để dư vài giờ). Model type: **"Based on small models (<=15B)"**.
 4. Ghi vào `EXPERIMENTS.md` và tick `PLAN.md`. Giữ nguyên tar và MD5: private **bắt buộc chạy đúng image này**.
@@ -189,7 +276,8 @@ một shop dev; cache Store ở `cache/` có thể xoá khi đầy ổ (tự bui
 
 | Rủi ro | Xử lý |
 |---|---|
-| Image LLM không ổn định hoặc quá 6 giờ | Final = image rule-only (đã passed). Không cố đến phút chót |
+| Image LLM không ổn định hoặc quá 6 giờ | Final = image rule-only (tar `zaic2026_datamate_aio_zalo_final.tar`). Không cố đến phút chót |
+| Nộp nhầm tar sai tên đội | Chỉ nộp tar có tag `zaic2026_datamate_aio_zalo:final`. Kiểm bằng `tar -xOf <tar> manifest.json` phải thấy `"RepoTags":["zaic2026_datamate_aio_zalo:final"]` |
 | Upload 30–40 GB lên Drive không kịp | Bắt đầu upload ngay khi image LLM qua cổng, muộn nhất 15/11 |
 | Không có GPU 20–23/11 | Đặt máy trước 16/11, có phương án thuê dự phòng |
 | Sửa code phút chót làm hỏng image | Sau 15/11 không đổi `src/` trừ lỗi chặn; mọi thay đổi qua PR + CI xanh |

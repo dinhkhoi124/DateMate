@@ -14,13 +14,12 @@ Agent trả lời câu hỏi tiếng Việt trên dữ liệu bảng (csv / xlsx
 Nguyên tắc thiết kế: **LLM dịch, code tính.** Câu hỏi được chuyển thành intent có cấu trúc, rồi executor
 deterministic tính trên dữ liệu đã chuẩn hoá theo đúng rulebook. Chi tiết ở [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-**Trạng thái hiện tại (v0.4, rule-only, chưa có LLM):**
+**Trạng thái hiện tại (11/11):** chi tiết ở [`docs/HANDOVER.md`](docs/HANDOVER.md) mục 1.
 
-| Tập | PA | Đúng / Sai / Abstain | Precision |
+| Hệ thống | dev (24 shop train) | holdout (6 shop) | public |
 |---|---|---|---|
-| dev (24 shop train) | 0.985 | 2410 / 0 / 37 | 100% |
-| holdout (6 shop train giữ lại) | 0.859 | 485 / 10 / 58 | 98.0% |
-| public (đã nộp, bản v0.3) | 0.076 | – | ~62% |
+| Rule-only (image đã qua Test Solution) | 0.985 (2410 / 0 / 37) | 0.859 (485 / 10 / 58) | 0.114 (v0.7) |
+| Agent sinh code Qwen3-14B-AWQ (D20) | 0.653 (code-gen một mình, 72 câu) | 0.444 | 0.117 (v2) |
 
 Khoảng cách giữa holdout và public là vấn đề chính đang giải quyết: shop lạ, ngành lạ, luật mới trong rulebook. Xem
 [`docs/PLAN.md`](docs/PLAN.md) và [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md).
@@ -32,7 +31,8 @@ Khoảng cách giữa holdout và public là vấn đề chính đang giải quy
 Bản đầy đủ ở [`CLAUDE.md`](CLAUDE.md). Vi phạm có thể làm cả đội bị loại hoặc làm số đo mất ý nghĩa.
 
 1. **Không đọc, không dùng `data/public_test/**/questions.jsonl`** để viết luật, prompt hay few-shot. Public chỉ
-   dùng để sinh file nộp. Xem cấu trúc **dữ liệu** của public (file, cột) để cải thiện bộ đọc thì được.
+   dùng để sinh file nộp và nhận điểm. **Không xem cấu trúc file, README hay log của public** (D23, theo FAQ BTC:
+   "kể cả việc xử lý tập public test để tạo ra thông tin train khác").
 2. **Không mở dữ liệu và câu hỏi của 6 shop holdout** (`eval/splits.json` → `holdout`: `biz_103, biz_110, biz_117,
    biz_123, biz_125, biz_128`). Chỉ chạy eval tổng hợp trên chúng. `--errors` và `--only` chỉ dùng cho shop dev.
 3. **Không hardcode** theo `id`, `business_id` hay tên shop. Xử lý đặc thù nào cũng phải suy ra được từ README của
@@ -69,8 +69,8 @@ python3.11 -m venv .venv
 
 ### Dữ liệu
 
-Dữ liệu thi **không nằm trong repo**. Tải `train.zip` (và `public_test.zip` nếu cần nộp) từ portal Zalo AI Challenge
-(tab Data), hoặc xin file từ lead, rồi giải nén để được cấu trúc sau:
+Dữ liệu thi **không nằm trong repo**. Tải `train.zip` (và `public_test.zip` khi cần nộp) từ Drive nhóm
+(`DataMate/data/`) hoặc portal Zalo AI Challenge (tab Data), rồi giải nén để được cấu trúc sau:
 
 ```
 data/
@@ -93,7 +93,7 @@ unzip public_test.zip -d data/public_test
 
 ```bash
 .venv/Scripts/python -m pytest tests -q
-# Có data (11/11): 202 passed, 1 skipped. Chưa có data thì một số test tự skip.
+# Có data (11/11): 210 passed. Chưa có data: 192 passed, 18 skipped.
 .venv/Scripts/ruff check src eval analysis tests
 ```
 
@@ -163,7 +163,8 @@ thele/                 thể lệ cuộc thi
 | [`docs/SPEC.md`](docs/SPEC.md) | Cần biết đề, định dạng đáp án, luật nộp bài, trả lời của BTC |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Cần hiểu pipeline và module |
 | [`docs/PLAN.md`](docs/PLAN.md) | Muốn biết việc đang làm và việc còn mở (checklist theo ngày) |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Muốn biết vì sao làm như vậy (D01–D23) |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Muốn biết vì sao làm như vậy (D01–D25) |
+| [`docs/BENCHMARK.md`](docs/BENCHMARK.md) | Benchmark shop tổng hợp (E0): cách đo agent trên shop lạ |
 | [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Muốn xem số liệu từng phiên bản và các lần nộp public |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | Cần biết phân vai, cách dùng GPU (Kaggle / thuê 5090) |
 
@@ -183,7 +184,7 @@ thele/                 thể lệ cuộc thi
    - Quyết định kiến trúc hoặc chọn model thì ghi vào `docs/DECISIONS.md` (bối cảnh → lựa chọn → lý do → hệ quả).
 4. Mở PR vào `main` và điền đủ PR template. **CI** (GitHub Actions) tự chạy lint, test, kiểm repo không có data/token
    và build image Docker. **CI xanh là bắt buộc** (GitHub chặn merge nếu CI đỏ). Review theo quy ước nhóm: mọi PR cần
-   **ít nhất 1 người khác** xem và comment hoặc approve trước khi merge; lead được tự động gán làm reviewer (CODEOWNERS).
+   **ít nhất 1 người khác** xem và comment hoặc approve trước khi merge; **PM duyệt mọi PR vào `main`** (HANDOVER mục 2).
    Merge bằng *Squash and merge*.
    **`main` phải luôn chạy được** vì image Docker build từ đây.
 5. Tick việc đã xong trong `docs/PLAN.md`.
@@ -204,14 +205,16 @@ Repo có sẵn `CLAUDE.md` và các lệnh tắt trong `.claude/commands/`: `/ev
 
 ## Docker
 
-Image bản rule-only (CPU, chưa có model) đã build và chạy đúng lệnh của BTC: kết quả giống hệt bản local trên 3000 câu train.
+Tên đội **AIO_Zalo**, tag bắt buộc **`zaic2026_datamate_aio_zalo:final`** (viết thường). Image rule-only (CPU) đã build và chạy đúng lệnh
+của BTC: kết quả giống hệt bản local trên 3000 câu train. Image LLM: `docker/Dockerfile.llm`, xem `docs/GPU_RUNBOOK.md` mục 6b.
 
 ```bash
-docker build --platform linux/amd64 -f docker/Dockerfile -t zaic2026_datamate_<team>:final .
-docker run --rm --network none --shm-size=16g --entrypoint bash \
+docker build --platform linux/amd64 -f docker/Dockerfile -t zaic2026_datamate_aio_zalo:final .
+MSYS_NO_PATHCONV=1 docker run --rm --network none --shm-size=16g --entrypoint bash \
   -v "$(pwd)/data/train/train:/data:ro" -v "$(pwd)/eval/runs/docker:/result" \
-  zaic2026_datamate_<team>:final /code/predict.sh
+  zaic2026_datamate_aio_zalo:final /code/predict.sh
 ```
+(`MSYS_NO_PATHCONV=1` chỉ cần trên Git Bash Windows.)
 
 Khi chấm, BTC thêm `--gpus`. Xem chi tiết ở [`docker/README.md`](docker/README.md) và SPEC mục *Submission contract*.
 **Hạn chót nộp image: 16/11/2026 23:59.**
