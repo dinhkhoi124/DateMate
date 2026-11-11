@@ -48,7 +48,9 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 - [x] D23: gỡ `aef6e9e` (từ vựng trạng thái); dev/holdout/agent không đổi
 
 **12/11**
-- [ ] **[5090]** Build image LLM theo D22 (`docs/GPU_RUNBOOK.md` 6b), `check_image.sh`: giây/câu (giới hạn 6 giờ), AWQ + prefix cache trên sm120, chạy 2 lần lệch ≤ 0.03 (**điều kiện nộp image**, D23; mục tiêu ≤ 0.01). Test Solution #2
+- [x] (11/11) Tar rule-only gắn tag tên đội `zaic2026_datamate_aio_zalo:final` (cùng image `2b324d85…`, code `ts1-ruleonly`): MD5 `fb43b6cae2c3eb5132d58077bbc8bf58`. Tar cũ tag `zaic2026_datamate_test:final` sai tên đội, không nộp
+- [ ] PM: upload tar mới lên Drive + **Test Solution** cho tar mới (HANDOVER mục 4, 12/11)
+- [ ] **[5090]** Build image LLM từ `main` `97aee0b` (PM chốt), tag `zaic2026_datamate_aio_zalo:final`, theo D22 (`docs/GPU_RUNBOOK.md` 6b), `check_image.sh`: giây/câu (giới hạn 6 giờ), AWQ + prefix cache trên sm120, chạy 2 lần lệch ≤ 0.03 (**điều kiện nộp image**, D23; mục tiêu ≤ 0.01). Test Solution #2
 
 **13–15/11**
 - [ ] Sửa theo nhóm lỗi dev/holdout (không theo public, không xem log public — D23), tối ưu tốc độ ≤ 30 s/câu, Test Solution mỗi ngày

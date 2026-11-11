@@ -186,9 +186,9 @@ Image bật agent sinh code (D20), không cần few-shot. Lead báo tên tag.
 ```bash
 git pull
 docker build --platform linux/amd64 -f docker/Dockerfile.llm \
-  --build-context weights=models/Qwen3-14B-AWQ --build-arg MODEL=Qwen3-14B-AWQ -t zaic2026_datamate_<team>:final .
+  --build-context weights=models/Qwen3-14B-AWQ --build-arg MODEL=Qwen3-14B-AWQ -t zaic2026_datamate_aio_zalo:final .
 # 2 GPU (giống máy chấm):
-bash scripts/gpu/check_image.sh zaic2026_datamate_<team>:final data/train/train
+bash scripts/gpu/check_image.sh zaic2026_datamate_aio_zalo:final data/train/train
 # 1 GPU: GPUS=0 TP=1 bash scripts/gpu/check_image.sh ...
 ```
 
