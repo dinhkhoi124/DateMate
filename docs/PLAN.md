@@ -38,8 +38,9 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 
 **11/11 — Go/no-go**
 - [ ] Full dev + holdout + rulebook tổng hợp (cosmetic/semantic), calibrate k/m và chính sách rule × code-gen. Precision ≥ 90%
-   - [ ] Holdout agent (chỉ số tổng) để xác nhận m=2 (D21 hệ quả): một lượt Kaggle riêng
-- [ ] Nộp public jsonl v2: gộp 3 shard bằng `resubmit_agent.py` (luồng chính thức, `--reexec`), `/submit-check`, nộp một bản, ghi bảng "Nộp public". Không phân tích log public (D23)
+   - [x] Holdout agent (chỉ số tổng) để xác nhận m=2 (D21 hệ quả): Kaggle ho1 (12 câu/shop, `62f3266`), reexec `fae7b33`: agree m=2 **0.708** (53/2/17, prec 0.964); code-gen một mình m=2 **0.444** (45/13/14, prec 0.776) ≥ m=3 0.431 → giữ m=2. Dev 0.653 → holdout 0.444: code-gen chưa tổng quát sang shop lạ
+- [x] Nộp public jsonl v2: gộp 3 shard bằng `resubmit_agent.py` (luồng chính thức, `--reexec`), `/submit-check`, nộp một bản, ghi bảng "Nộp public". Không phân tích log public (D23)
+   - [x] Gộp pub1 (shard0 `5cc263f`, shard1–2 `62f3266`) ở `fae7b33`, agree m=2: 585 trả lời / 415 abstain, unanswerable 2; submit_check PASS → `eval/runs/public_pub1/merged/submission.jsonl`. **Public 0.117** (v0.7: 0.114), ước precision ~60%
 - [x] Test Solution #1 (rule-only): **Test passed** (MD5 `8cf7dec3…`, xong 22:46 10/11, chạy 11 phút). Chưa bấm submit (để dành cho final 16/11)
    - [x] Build lại từ `3c5848c` (đã gỡ `aef6e9e`, `--no-cache`: layer pip cũ hỏng khi ổ E: đầy → numpy segfault). Container trên train = local 3000/3000 (2895/10/95, 397s), submit_check PASS. Tar 308MB, MD5 `8cf7dec3b6e6383a339921657ab68d8a` (thay `31440b7c…`). Đã upload Drive + test
 - [x] D23: gỡ `aef6e9e` (từ vựng trạng thái); dev/holdout/agent không đổi
