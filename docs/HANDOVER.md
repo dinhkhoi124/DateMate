@@ -17,8 +17,8 @@ Trong các tài liệu cũ (`GPU_RUNBOOK.md`, `KAGGLE.md`, `WORKFLOW.md`…), ch
 | Agent code-gen (Qwen3-14B-AWQ, D20/D22) | code-gen một mình: dev 0.653, holdout **0.444** (precision 0.776). Policy `agree` m=2 trên holdout 0.708 (72 câu) | `src/datamate/agent/` |
 | Public v2 (agent, Kaggle) | **0.117** | như trên |
 | **Image LLM** (`docker/Dockerfile.llm`) | **Chưa build trên GPU.** Mới kiểm build không weights trên CPU | `docs/GPU_RUNBOOK.md` mục 6b |
-| Test | 202 passed, 1 skipped; ruff sạch | `pytest tests -q` |
-| Benchmark shop tổng hợp E0 | Bản nháp, chưa chạy | `docs/BENCHMARK.md` |
+| Test | 203 passed; ruff sạch | `pytest tests -q` |
+| Benchmark shop tổng hợp E0 (D24) | **Đóng băng** 534 cell; đã đo ingest (status_codes/status_newword hỏng 24/24 shop). Chưa chạy agent (E2 cần GPU, sau việc nộp image) | `docs/BENCHMARK.md` |
 
 **Đánh giá thẳng:** agent chưa tổng quát tốt sang shop lạ (dev 0.653 → holdout 0.444), và image LLM chưa từng chạy
 trên 5090. Image rule-only là bản **đã chắc chắn chạy được**. Đó là phương án an toàn cho final.

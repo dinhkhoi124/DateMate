@@ -4,6 +4,39 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D24 — Benchmark tổng quát hoá agent trên shop tổng hợp (E0), đóng băng (2026-11-11)
+- **Bối cảnh:** code-gen một mình dev 0.653 → holdout 0.444 → public ước precision ~60% (v2 0.117). Dev chỉ 72 câu
+  (SE PA ~0.08). Không được dùng public (D23) hay tuning trên holdout. Cần một thước đo shop lạ đủ lớn, có nhãn, để
+  chọn cải tiến cho agent. Rà code (11/11): agent chỉ thấy frame chuẩn của ingest (`agent/tables.py::frames_of`),
+  cột/bảng không map được bị bỏ; trên 24 shop dev `Store.extra` đều rỗng, nên train không lộ giới hạn này.
+- **Lựa chọn:**
+  1. Cell = (câu train, biến thể). Mỗi câu có cell `original` và một cell biến thể, mọi so sánh là so sánh cặp.
+     12 family trong 6 nhóm G1–G6 (`eval/synth/families.py`). Nhãn: `same` / `unanswerable` (`drop_table`) /
+     `recomputed` (`rule_param`, gold tính lại bằng rule engine, chỉ câu rule engine trả đúng trên bản gốc) /
+     `changed` (`rule_exception`, chỉ đo stale, không vào PA).
+  2. Chia theo shop gốc: A = Synth-Tune 16 shop, B = Synth-Eval 8 shop (một shop mỗi kiểu xuất, `biz_105`
+     leave-style-out), tham số biến đổi A ≠ B. B chỉ xem số tổng. Holdout không tạo biến thể.
+  3. Metric và luật nhận một thay đổi đăng ký trước E2 (`docs/BENCHMARK.md` §4–5): PA cặp, precision luôn kèm
+     coverage và answerable recall, forced-answer rate, stale rate, flip rate ngữ nghĩa, lỗi runtime/semantic theo
+     lớp, runtime median/p95 end-to-end theo giai đoạn, CI bootstrap theo shop kèm số shop/cell.
+  4. Đóng băng: `eval/synth/bench_cells.json` (534 cell, chỉ id + nhãn, `gen_hash 0d52d01775c9d7ec`) commit vào repo.
+     `run` từ chối chạy khi generator đổi. Muốn đổi thì `build --rebuild` kèm một D-entry mới.
+  5. Giữ nguyên phân bổ hiện tại dù `split_months` A chỉ có 3 shop (lead chọn, không build lại). Kết luận chỉ ở mức
+     nhóm và tổng theo side, không dùng riêng `split_months` A.
+- **Lý do:** shop tổng hợp từ train là nguồn shop lạ hợp lệ duy nhất (FAQ cho dùng train, cấm xử lý public). Chia
+  theo shop cùng tham số A/B khác nhau chặn hai kiểu leakage: theo shop và theo từ điển biến đổi. Đóng băng trước khi
+  chạy agent để luật nhận không bị chỉnh theo kết quả.
+- **Hệ quả:**
+  - Ingest (E0, không cần GPU): `status_codes` và `status_newword` hỏng ingest trên 24/24 shop (đơn huỷ/trả thành
+    hợp lệ), `layout` kiểu B hỏng 6/8 shop, `rename_tables` 1/16 shop A. Các family khác khớp 100%. Đây là bằng
+    chứng đầu tiên cho giả thuyết "schema đóng": lỗi ingest đi thẳng vào `T` của agent.
+  - Trace agent/pipeline ghi thời gian từng giai đoạn (`timing`), không đổi đáp án.
+  - Chưa có số agent trên benchmark. E2 cần GPU (ước khoảng 530 câu × 83 s/câu trên T4 ≈ 12 giờ Kaggle). Theo
+    HANDOVER, việc nộp image (Test Solution trước 15/11) được ưu tiên hơn E2.
+  - Giới hạn: B không phải shop lạ thật (24 shop dev đã dùng để phát triển ingest/rule), mỗi family chỉ 7–15 cell.
+
+---
+
 ### D23 — Siết luật dùng public theo FAQ BTC; tái lập trên 2× 5090 là điều kiện nộp image (2026-11-10)
 - **Bối cảnh:** BTC gửi FAQ chung của track (bản lưu cục bộ `thele/ZALO-AI-CHALLENGE-2026.docx`, không commit). Các ý
   liên quan DataMate:

@@ -16,6 +16,7 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 import random
 import re
 import shutil
@@ -101,10 +102,27 @@ def _orig_meta(biz: str) -> tuple[list, set]:
 
 
 FP_DIR = BENCH / "fp"
+STAMPS = BENCH / ".stamps"   # one per (side, shop): written only after ALL its variants are on disk
 
 
 def _fp_path(key: str) -> Path:
     return FP_DIR / (key.replace("|", "__") + ".json")
+
+
+def _atomic_write(path: Path, text: str):
+    """Write-then-rename: an interrupted run never leaves a half-written file under the final name."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf8", newline="\n")
+    os.replace(tmp, path)
+
+
+def _src_hash() -> str:
+    """Rule engine identity (rule_pass.json is valid only for this src/datamate code and train rulebook)."""
+    h = hashlib.sha1()
+    for f in sorted((ROOT / "src" / "datamate").rglob("*.py")) + [TRAIN / "rulebook.md"]:
+        h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+    return h.hexdigest()[:16]
 
 
 def _variant_fp(path: Path, key: str) -> str:
@@ -112,8 +130,7 @@ def _variant_fp(path: Path, key: str) -> str:
     from eval.synth.run import fingerprint   # noqa: PLC0415
     fp = fingerprint(Store.build(path, use_cache=False))
     txt = json.dumps(fp, sort_keys=True, default=str)
-    FP_DIR.mkdir(parents=True, exist_ok=True)
-    _fp_path(key).write_text(txt, encoding="utf8")
+    _atomic_write(_fp_path(key), txt)
     return hashlib.sha1(txt.encode()).hexdigest()[:12]
 
 
@@ -145,8 +162,22 @@ def _gen_shop(side: str, biz: str, seed: int, kinds: list, canc: set, drop_kind:
 def _gen_job(job: tuple) -> tuple:
     """Process-pool worker: (side, biz, seed, drop_kind) -> (side, biz, {family: (applicable, fp)})."""
     side, biz, seed, drop_kind = job
+    stamp = STAMPS / f"{side}__{biz}.json"
+    key = f"{gen_hash()}|{seed}|{drop_kind}"
+    if stamp.exists():   # resume: this shop finished in an earlier (interrupted) run with the same generator
+        try:
+            st = json.loads(stamp.read_text(encoding="utf8"))
+            res = {f: tuple(v) for f, v in st["result"].items()}
+            if st["key"] == key and all((BENCH / side / f / "data" / biz).exists() and _fp_path(f"{side}|{f}|{biz}").exists()
+                                        for f, (ok, _) in res.items() if ok):
+                return side, biz, res
+        except (OSError, ValueError, KeyError):
+            pass
+        stamp.unlink(missing_ok=True)
     kinds, canc = _orig_meta(biz)
-    return side, biz, _gen_shop(side, biz, seed, kinds, canc, drop_kind)
+    res = _gen_shop(side, biz, seed, kinds, canc, drop_kind)
+    _atomic_write(stamp, json.dumps({"key": key, "result": res}))
+    return side, biz, res
 
 
 def _gen_all(jobs: list, n_jobs: int) -> dict:
@@ -207,9 +238,16 @@ def build(args):
             p.write_text(fn(md, side), encoding="utf8", newline="\n")
             rb_paths[(side, fam)] = p
     rp_cache = BENCH / "rule_pass.json"   # rule engine output on train questions (gitignored)
-    if args.reuse_rule_pass and rp_cache.exists():
-        cached = json.loads(rp_cache.read_text(encoding="utf8"))
+    rp_key = f"{_src_hash()}|{','.join(cfg['A'] + cfg['B'])}"
+    cached = None
+    if rp_cache.exists():   # reused when made by the same rule engine on the same shops (resume after interruption)
+        try:
+            cached = json.loads(rp_cache.read_text(encoding="utf8"))
+        except ValueError:
+            cached = None
+    if cached and (cached.get("key") == rp_key or (args.reuse_rule_pass and "key" not in cached)):
         orig, recomputed = cached["orig"], cached["recomputed"]
+        print("rule passes reused from rule_pass.json", flush=True)
     else:
         orig = rule_pass(side_qs["A"] + side_qs["B"], TRAIN)
         recomputed = {}
@@ -219,9 +257,9 @@ def build(args):
                 g, o, n = golds[q["id"]], orig[q["id"]]["row"], rp[q["id"]]["row"]
                 if score(o, g) == 1 and n.get("type") not in ABSTAINISH and score(n, g) != 1:
                     recomputed[f"{side}|{q['id']}"] = {"type": n["type"], "answer": n.get("answer")}
-        rp_cache.write_text(json.dumps({"orig": orig, "recomputed": recomputed}, ensure_ascii=False, default=str),
-                            encoding="utf8")
-    RECOMP.write_text(json.dumps(recomputed, ensure_ascii=False, indent=0), encoding="utf8")
+        _atomic_write(rp_cache, json.dumps({"key": rp_key, "orig": orig, "recomputed": recomputed},
+                                           ensure_ascii=False, default=str))
+    _atomic_write(RECOMP, json.dumps(recomputed, ensure_ascii=False, indent=0))
     print(f"rule passes: {len(orig)} questions, {len(recomputed)} recomputed golds ({time.time() - t0:.0f}s)", flush=True)
 
     cells, applicable, variant_fp, picked, drop_kinds = [], defaultdict(set), {}, {}, {}
@@ -291,7 +329,7 @@ def build(args):
     meta = {"gen_hash": gen_hash(), "seed": seed, "created": time.strftime("%Y-%m-%d %H:%M:%S"),
             "n_cells": len(cells), "variant_fp": variant_fp, "drop_kind": drop_kinds,
             "applicable": {f"{s}|{f}": sorted(b) for (s, f), b in sorted(applicable.items())}}
-    CELLS.write_text(json.dumps({"meta": meta, "cells": cells}, ensure_ascii=False, indent=1), encoding="utf8")
+    _atomic_write(CELLS, json.dumps({"meta": meta, "cells": cells}, ensure_ascii=False, indent=1))
     _summary(cells)
     print(f"\n{CELLS.relative_to(ROOT)}: {len(cells)} cells, gen_hash {meta['gen_hash']} ({time.time() - t0:.0f}s)")
 

@@ -1,7 +1,8 @@
 # BENCHMARK — Agent Generalization trên shop tổng hợp (E0, D24)
 
-> **Trạng thái 11/11: bản nháp, chưa chạy.** Code và test đã có, nhưng `bench_cells.json` chưa build và mục D24 chưa
-> ghi vào `DECISIONS.md`. Muốn dùng: ghi D24, chạy `bench.py build` một lần (chỉ shop dev), commit `bench_cells.json`.
+> **Trạng thái 11/11: ĐÃ ĐÓNG BĂNG (D24).** `bench_cells.json`: 534 cell, `gen_hash 0d52d01775c9d7ec`. Đã chạy
+> `ingest` (§7). **Chưa chạy agent trên benchmark (E2).** Trên máy mới: `bench.py materialize` (khoảng 40 phút với
+> `--jobs 2`; chạy lại sau gián đoạn sẽ bỏ qua shop đã xong), rồi `run`/`score`.
 
 Mục đích: đo agent code-gen trên shop có schema lạ **mà không dùng public** (D23) và **không tuning trên holdout**.
 Code: `eval/synth/families.py` (biến đổi), `eval/synth/bench.py` (build / materialize / ingest / run / score).
@@ -59,6 +60,41 @@ Chọn câu theo từng shop (seed cố định):
   `materialize` dựng lại biến thể (ví dụ trên Kaggle) và kiểm từng biến thể bằng fingerprint Store đã đóng băng.
 - **Giới hạn đã biết:** 24 shop dev đã được dùng để phát triển ingest/rule trước E0, nên B **không** phải shop lạ thật.
   B chỉ bảo vệ việc tuning từ E0 trở đi, và các biến đổi của B chưa từng được nhìn thấy.
+- **Kiểm leakage lúc đóng băng (11/11):** không shop nào có cell ở cả A và B; không có shop holdout; thư mục biến thể
+  `out/bench/A/*` chỉ chứa shop A, `out/bench/B/*` chỉ chứa shop B; mọi khoá fingerprint đúng side.
+- **Chạy lại an toàn:** mỗi (side, shop) có stamp `out/bench/.stamps/` chỉ ghi sau khi **mọi** biến thể của shop đã
+  nằm trên disk. Lần chạy sau bỏ qua shop có stamp khớp (cùng generator, seed, drop_kind), shop dở dang thì làm lại
+  từ đầu. `rule_pass.json`, fingerprint và `bench_cells.json` được ghi kiểu ghi-tạm-rồi-đổi-tên. `rule_pass.json`
+  tự dùng lại khi code `src/datamate` không đổi.
+
+### 3a. Số shop độc lập và số cell (bản đóng băng)
+
+| Nhóm | Family | A: shop / cell | B: shop / cell |
+|---|---|---|---|
+| G0 | `original` | 16 / 176 | 8 / 91 |
+| G1 | `rename_cols` | 14 / 14 | 5 / 7 |
+| G1 | `rename_tables` | 12 / 14 | 5 / 8 |
+| G2 | `layout` | 10 / 14 | 7 / 7 |
+| G3 | `values` | 12 / 14 | 7 / 7 |
+| G4 | `nodoc` | 12 / 15 | 6 / 7 |
+| G5 | `split_months` | **3 / 15** ⚠ | 5 / 7 |
+| G5 | `status_codes` | 11 / 14 | 5 / 7 |
+| G5 | `noise_table` | 11 / 14 | 5 / 7 |
+| G5 | `drop_table` | 4 / 8 | 3 / 5 |
+| G6 | `status_newword` | 13 / 14 | 7 / 7 |
+| G6 | `rule_param` | 4 / 8 | 5 / 10 |
+| G6 | `rule_exception` | 16 / 32 | 8 / 12 |
+| **Theo nhóm** | G1 / G2 / G3 / G4 / G5 / G6 | 14/28 · 10/14 · 12/14 · 12/15 · 15/51 · 16/54 | 8/15 · 7/7 · 7/7 · 6/7 · 8/26 · 8/29 |
+
+- ⚠ **`split_months` side A chỉ có 3 shop độc lập** (biz_104: 2, biz_126: 8, biz_129: 5 cell). Lý do: thuật toán
+  gán cân bằng số cell của family trên **cả side**, không trong từng shop, nên hai shop xử lý sau dồn câu nền vào
+  family đang ít cell. Lead chọn giữ nguyên, không build lại (11/11). **Không dùng riêng kết quả `split_months` A để
+  kết luận về khả năng tổng quát hoá.** Chỉ báo nó trong dòng G5 hoặc tổng của A, kèm CI theo shop.
+- Side B không bị lệch kiểu này: mỗi family có tối đa 2 cell/shop, shop nhiều nhất chiếm ≤ 40% cell của family.
+- Family có ít shop (A `drop_table` 4, A `rule_param` 4, B `drop_table` 3) cũng quá nhỏ để kết luận riêng. Kết luận
+  ở mức **nhóm (G1–G6) và tổng theo side**, đọc kèm số shop và CI bootstrap theo shop.
+- Mỗi family có khoảng 7–15 cell, nên CI theo family rất rộng. Luật nhận một thay đổi (§5) dựa trên tổng biến thể của
+  side B, không dựa trên từng family.
 
 ## 4. Định nghĩa metric (`bench.py score`)
 
@@ -107,3 +143,21 @@ PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py run --arm base --side A 
 PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py score eval/runs/<A> eval/runs/<B> [--baseline <dirs>] [--errors 30]
 ```
 Có thể chạy theo shard bằng `--side/--families/--shops`. `score` gộp nhiều thư mục run của cùng một arm.
+`build` và `materialize` mặc định `--jobs 3`. Máy 16 GB RAM nên dùng `--jobs 2` (`--jobs 3` từng bị dừng vì thiếu RAM).
+
+## 7. Kết quả ingest (E0, 11/11)
+
+`bench.py ingest`: Store của biến thể so với bản gốc, đếm số shop khớp hoàn toàn và % trường fingerprint khớp. Số
+shop ở đây là mọi shop của side áp dụng được family, nhiều hơn số shop có cell ở §3a.
+
+| Family | A: shop khớp hoàn toàn | B: shop khớp hoàn toàn | Ghi chú |
+|---|---|---|---|
+| `rename_cols` | 16/16 | 7/8 (95.8%) | |
+| `rename_tables` | 15/16 (98.8%) | 8/8 | 1 shop A mất bảng thanh toán và chi phí (tên file không còn khớp README) |
+| `layout` | 16/16 | **2/8 (78.0%)** | cột trống + header lặp (kiểu B) làm sai số dòng/đơn |
+| `values`, `nodoc`, `noise_table`, `split_months` | 100% | 100% | |
+| `status_codes` | **0/16 (74.3%)** | **0/8 (74.3%)** | không đọc chú giải mã trạng thái → đơn huỷ/trả thành hợp lệ |
+| `status_newword` | **0/16 (77.1%)** | **0/8 (77.1%)** | từ huỷ mới không được nhận → như trên |
+
+Lỗi ingest truyền thẳng sang agent, vì agent dùng `T` dựng từ ingest (ARCHITECTURE §8). Khi đọc kết quả agent ở E2,
+tách cell theo "ingest khớp / không khớp" trước khi quy lỗi cho code-gen.
