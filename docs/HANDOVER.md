@@ -15,7 +15,7 @@ eval, đọc kết quả).
 | Hạng mục | Kết quả | Ở đâu |
 |---|---|---|
 | Pipeline rule-only (không model) | dev **0.985**, holdout **0.859** | `src/datamate/`, chạy CPU |
-| **Image rule-only** | **Test Solution #1: Test passed** (10/11, 11 phút). MD5 `8cf7dec3b6e6383a339921657ab68d8a`, tar 308 MB. **Chưa bấm nộp final** | Drive nhóm |
+| **Image rule-only** | **Test Solution #1: Test passed** (10/11, 11 phút). MD5 `8cf7dec3b6e6383a339921657ab68d8a`, tar 308 MB. **Chưa bấm nộp final**. Mã nguồn: tag `ts1-ruleonly` (`3c5848c`) | Drive nhóm; code: `git checkout ts1-ruleonly` |
 | Public v0.7 (rule-only) | **0.114** | `docs/EXPERIMENTS.md` bảng "Nộp public" |
 | Agent code-gen (Qwen3-14B-AWQ, D20/D22) | code-gen một mình: dev 0.653, holdout **0.444** (precision 0.776). Policy `agree` m=2 trên holdout 0.708 (72 câu) | `src/datamate/agent/` |
 | Public v2 (agent, Kaggle) | **0.117** | như trên |
@@ -45,7 +45,7 @@ Submission) do PM làm hoặc PM xác nhận bằng tin nhắn trước.
 Các mặc định này áp dụng khi PM không trả lời được. Không ai được tự chọn cấu hình khác thay cho PM.
 
 - **Image final:** nếu đến **16/11 18:00** vẫn chưa có quyết định của PM, final = **image rule-only đã qua Test
-  Solution** (MD5 `8cf7dec3b6e6383a339921657ab68d8a`, build từ `3c5848c`, tar trên Drive). Không nộp image LLM, kể cả
+  Solution** (MD5 `8cf7dec3b6e6383a339921657ab68d8a`, build từ tag `ts1-ruleonly` = `3c5848c`, tar trên Drive). Không nộp image LLM, kể cả
   khi nó đã qua cổng, nếu PM chưa chọn.
 - **Người nộp form "Solution Submission":** nếu PM vắng lúc 16/11 18:00, Người B nộp image rule-only ở trên bằng tài
   khoản đã kiểm nộp được (mục 3b), trước 23:59, rồi nhắn nhóm link Drive và MD5 đã nộp.
@@ -64,7 +64,14 @@ Các mặc định này áp dụng khi PM không trả lời được. Không ai
       **mọi việc làm từ `main`**. Nhánh chưa push lên GitHub: push và mở PR trước khi duyệt
 - [ ] Thay đổi ingest ngày 11/11 (chú giải trạng thái từ README, trạng thái `unknown`) làm đổi hành vi trên shop có
       trạng thái lạ. Dev không đổi (2410/0/37). PM quyết có đưa vào image LLM hay không. Image rule-only đã qua Test
-      Solution build từ `3c5848c` và **không** có thay đổi này
+      Solution build từ tag `ts1-ruleonly` (`3c5848c`) và **không** có thay đổi này
+
+### Tag trên GitHub (không xoá)
+- `ts1-ruleonly` → `3c5848c`: mã nguồn của image rule-only đã qua Test Solution #1, tức phương án final mặc định.
+  BTC hỏi tái lập image này thì dùng tag này.
+- `archive/pre-squash-pr8` → `02bd1c2`: toàn bộ lịch sử trước khi PR #8 được squash vào `main` (`5e21a8e`). Các hash
+  dẫn trong `DECISIONS.md`, `EXPERIMENTS.md`, `PLAN.md` (ví dụ `eaead07`, `3994246`, `fae7b33`) chỉ có trong lịch sử
+  này. Xem bằng `git log archive/pre-squash-pr8`. Không xoá tag này, và không xoá nhánh `fix/agent-runtime-errors`.
 
 ### 3b. Quyền truy cập
 | Hệ thống | Việc cần làm | PM giữ | Người A | Người B |
