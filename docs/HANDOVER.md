@@ -206,6 +206,8 @@ GPU hay thời gian cần cho việc build, kiểm và nộp Test Solution.
 
 ### 13–15/11 — Cải thiện điểm (Người A, song song, chỉ khi còn thời gian)
 
+**Danh sách việc nghiên cứu đầy đủ, trạng thái và cách đo: `docs/RESEARCH_BACKLOG.md`.** Chỉ nhóm A (CPU, xong trước 14/11 12:00, PM duyệt) có thể vào bài nộp; nhóm B làm sau Test Solution hoặc sau 16/11. Người làm do PM chỉ định.
+
 **Benchmark E2 (agent trên shop tổng hợp, `docs/BENCHMARK.md`) chưa chạy.** Chỉ chạy **sau khi Test Solution đã
 xong** và còn đủ GPU (ước khoảng 12 giờ Kaggle T4). Người chạy do PM phân công sau Test Solution. Phần CPU (ingest
 trên synthetic: `bench.py ingest`) chạy được bất cứ lúc nào.
