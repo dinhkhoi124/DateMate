@@ -1,4 +1,5 @@
-"""Regression tests for core rule fixes, on dev shops only (never holdout)."""
+"""Regression tests for core rule fixes, on dev shops only (never holdout).
+Questions are reworded, not copied from train: the repo is public and competition text stays off GitHub (D13, D15)."""
 from pathlib import Path
 
 import pytest
@@ -20,19 +21,19 @@ def ask(ctx, biz, q, as_of):
 
 def test_tet_vs_days_before_single_anchor(ctx):
     # rulebook §2: so với trước Tết = cùng số ngày ngay trước 23 tháng Chạp (one Tết anchor)
-    it, _, row = ask(ctx, "biz_106", "Dịp Tết âm lịch 2026 có doanh thu hơn hay kém 17 ngày trước Tết bao nhiêu %?",
+    it, _, row = ask(ctx, "biz_106", "So với 17 ngày trước Tết, doanh thu dịp Tết âm lịch 2026 cao hơn hay thấp hơn bao nhiêu %?",
                      "2026-09-14")
     assert it.op == "tet_vs_before" and row["type"] == "percent"
 
 
 def test_out_of_stock_is_not_expiry(ctx):
     # rulebook §5: mặt hàng hết hàng cuối ngày = tồn hết ngày bằng 0 ('het hang' must not hit the expiry branch)
-    it, _, row = ask(ctx, "biz_120", "Đến cuối ngày 12/06/2026, shop có mấy mặt hàng đang hết hàng?", "2026-06-12")
+    it, _, row = ask(ctx, "biz_120", "Tính tới cuối ngày 12/06/2026 có bao nhiêu mặt hàng đã hết hàng?", "2026-06-12")
     assert it.op == "stock_out_count" and row["type"] == "number"
 
 
 def test_customer_debt_flow_without_debt_data_is_unanswerable(ctx):
     # rulebook §7: shop không ghi loại thông tin câu hỏi cần -> không trả lời được
-    it, _, row = ask(ctx, "biz_112", "tháng này, Bạch Hùng Ngân ghi nợ thêm bn tiền và đã trả nợ được bao nhiêu",
+    it, _, row = ask(ctx, "biz_112", "trong tháng này Bạch Hùng Ngân nợ thêm bao nhiêu tiền, trả nợ được bao nhiêu",
                      "2026-07-31")
     assert it.op == "debt_customer_flow" and row["type"] == "unanswerable"

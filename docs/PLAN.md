@@ -1,12 +1,16 @@
 # PLAN — Roadmap & checklist
 
-Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạy được** · Chi tiết thiết kế: `ARCHITECTURE.md` · Đề bài: `SPEC.md`
+> **11/11: bàn giao cho hai thành viên, xem `docs/HANDOVER.md`** (lịch và cổng chọn image final ở mục 4).
+
+Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạy được** · **Private: đội tự chạy 20/11 09:00 → 23/11 23:59, cần GPU** (D16) · Chi tiết thiết kế: `ARCHITECTURE.md` · Đề bài: `SPEC.md`
 
 ## Mục tiêu đo được
 
 | Chỉ số | Cách đo | Ngưỡng |
 |---|---|---|
-| **PA proxy shop lạ** (từ 04/11) | shop tổng hợp từ train, đổi schema/cách ghi (`eval/synth/`). **Thước đo chính để ra quyết định** | tăng đều; precision ≥ 90% |
+| PA public (D16, sửa theo D21) | mỗi lần chạy GPU trên public nộp **một** bản, sinh bằng cấu hình đã commit, loại model "<=15B". **Chỉ để theo dõi**: không dùng để chọn hay tối ưu cấu hình, prompt, luật (CLAUDE.md luật 8) | ghi vào bảng "Nộp public" |
+| **PA code-gen một mình trên dev** (từ 09/11, D20) | `eval/calibrate_agent.py` trên trace Kaggle (hoặc trace chạy lại trên CPU). **Thước đo ra quyết định chính** cho agent: trên public, rule gần như bị chặn | tăng qua mỗi vòng; precision ≥ 85% |
+| **PA proxy shop lạ** (từ 04/11) | shop tổng hợp từ train, đổi schema/cách ghi (`eval/synth/`). Thước đo để ra quyết định hằng ngày (không tốn lượt nộp) | tăng đều; precision ≥ 90% |
 | **Ingest shop lạ** | đo riêng: Store dựng từ shop tổng hợp so với Store gốc (đơn, dòng, tiền, trạng thái, ngày) | ≥ 95% số chỉ số khớp |
 | PA holdout | 6 shop train giữ lại, không nhìn khi viết code. Chỉ dùng làm **regression check**, không tối ưu thêm | không giảm > 0.02 |
 | Precision (câu đã trả lời) | đúng / (đúng + sai) | ≥ 97% holdout |
@@ -15,7 +19,45 @@ Freeze Docker: **16/11 23:59** · Mốc an toàn: **12/11 phải có image chạ
 
 **Chia tập:** holdout gồm `biz_103, biz_110, biz_117, biz_123, biz_125, biz_128`, mỗi shop một kiểu xuất khác nhau. Danh sách chính thức nằm ở `eval/splits.json`. Phần còn lại là dev.
 
-## Checklist theo ngày
+## Lịch mới sau D20 (09/11): agent sinh code là đường chính
+
+GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = bắt buộc máy GPU thành viên.
+
+**09/11**
+- [ ] Test Solution #1: image rule-only (`zaic2026_datamate_test:final`) → `docker save` → MD5 → Drive public → nộp. Kiểm container trên public = v0.7 trước khi gửi
+   - [x] Container trên public = v0.7 (1000/1000, 153s, submit_check PASS); tar 308MB, MD5 `31440b7cda3d15efc37724bb22f67b1d`. Còn: upload Drive + nộp form
+- [x] D20 (DECISIONS), PLAN, ARCHITECTURE §8
+- [x] Khung agent code-gen trên CPU: `src/datamate/agent/` (context builder, helper, sandbox, bỏ phiếu, log), backend giả, test
+
+**10/11**
+- [x] Notebook Kaggle (private dataset = train): vLLM + Qwen3-14B-AWQ, agent trên 72 câu dev (3 câu/shop)
+   - [x] (09/11) `scripts/kaggle/datamate_dev.ipynb` + `docs/KAGGLE.md`, `run_eval --per-shop/--trace`, `eval/calibrate_agent.py` (re-vote m × policy trên CPU)
+   - [x] Kaggle v1 → v2 → v3 (prompt v3): code-gen một mình 0.097 → 0.597 → 0.639; sửa CPU (`in_period` vô hướng, gộp `merge` `_x/_y`) → **0.653** (m=2)
+- [ ] Chọn model: 2–3 ứng viên ≤ 15B trên cùng câu dev. Mới đo Qwen3-14B-AWQ; image chốt AWQ theo D22, đổi model phải đo lại trên train
+- [x] D21: tách luồng nộp chính thức khỏi thử nghiệm (`resubmit_agent.py` official/`--experiment`), `AgentConfig.min_votes` 4 → 2 theo dev
+- [x] Notebook public chia shard (`scripts/kaggle/datamate_public.ipynb`, resume bằng replay) + `eval/resubmit_agent.py`. Shard 0 đang chạy
+- [x] D22: `Dockerfile.llm` theo agent D20 (Qwen3-14B-AWQ fp16, TP=2, max len 20480, bỏ few-shot), build kiểm không weights trên CPU
+
+**11/11 — Go/no-go**
+- [ ] Full dev + holdout + rulebook tổng hợp (cosmetic/semantic), calibrate k/m và chính sách rule × code-gen. Precision ≥ 90%
+   - [x] Holdout agent (chỉ số tổng) để xác nhận m=2 (D21 hệ quả): Kaggle ho1 (12 câu/shop, `62f3266`), reexec `fae7b33`: agree m=2 **0.708** (53/2/17, prec 0.964); code-gen một mình m=2 **0.444** (45/13/14, prec 0.776) ≥ m=3 0.431 → giữ m=2. Dev 0.653 → holdout 0.444: code-gen chưa tổng quát sang shop lạ
+- [x] Nộp public jsonl v2: gộp 3 shard bằng `resubmit_agent.py` (luồng chính thức, `--reexec`), `/submit-check`, nộp một bản, ghi bảng "Nộp public". Không phân tích log public (D23)
+   - [x] Gộp pub1 (shard0 `5cc263f`, shard1–2 `62f3266`) ở `fae7b33`, agree m=2: 585 trả lời / 415 abstain, unanswerable 2; submit_check PASS → `eval/runs/public_pub1/merged/submission.jsonl`. **Public 0.117** (v0.7: 0.114), ước precision ~60%
+- [x] Test Solution #1 (rule-only): **Test passed** (MD5 `8cf7dec3…`, xong 22:46 10/11, chạy 11 phút). Chưa bấm submit (để dành cho final 16/11)
+   - [x] Build lại từ `3c5848c` (đã gỡ `aef6e9e`, `--no-cache`: layer pip cũ hỏng khi ổ E: đầy → numpy segfault). Container trên train = local 3000/3000 (2895/10/95, 397s), submit_check PASS. Tar 308MB, MD5 `8cf7dec3b6e6383a339921657ab68d8a` (thay `31440b7c…`). Đã upload Drive + test
+- [x] D23: gỡ `aef6e9e` (từ vựng trạng thái); dev/holdout/agent không đổi
+
+**12/11**
+- [ ] **[5090]** Build image LLM theo D22 (`docs/GPU_RUNBOOK.md` 6b), `check_image.sh`: giây/câu (giới hạn 6 giờ), AWQ + prefix cache trên sm120, chạy 2 lần lệch ≤ 0.03 (**điều kiện nộp image**, D23; mục tiêu ≤ 0.01). Test Solution #2
+
+**13–15/11**
+- [ ] Sửa theo nhóm lỗi dev/holdout (không theo public, không xem log public — D23), tối ưu tốc độ ≤ 30 s/câu, Test Solution mỗi ngày
+- [ ] **[5090]** Đo lại ngưỡng bằng chính image cuối
+- [ ] Upload image final lên Drive (30–40 GB) trước 15/11 tối, thử tải về + MD5
+
+**16/11** — Nộp final (≤ 2 lần) trước 23:59. **20–23/11** — **[5090]** chạy private
+
+## Checklist theo ngày (trước D20)
 
 ### Phase 1 — Plan & Design (04/11) ✅
 - [x] Đọc thể lệ, rulebook. Khám phá data và intent (`analysis/intent_survey.py`)
@@ -61,21 +103,43 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
    - [x] Docker: cache Store/raw ghi vào `$DATAMATE_CACHE` (`config.cache_root()`, `predict.sh` đặt `/tmp/datamate_cache`; SPEC §7 câu 2); log `/result/logs/log.jsonl` mỗi câu {id, answer, elapsed_ms, thinking=null, code, inputs, output} stream cùng submission (SPEC §7 câu 3, D12). Dev không đổi (2410/0)
    - [x] Sinh lại public (`eval/runs/public_v0.4`, 57d2d2f): vẫn **107 câu** abstain do không có bảng đơn, cùng 2 shop như v0.2/v0.3 (số 214 cũ đếm trùng). Loại câu trả lời y hệt v0.3 (abstain 690), 21 câu đổi giá trị. Các sửa ingest từ proxy chưa chạm tới 2 shop này
    - (gốc) Ingest bền + bất biến lúc chạy (đối soát dòng/đơn, phân bố trạng thái, khoảng ngày); shop không qua thì abstain. Sửa tổng quát lỗi không nhận ra bảng đơn hàng
-3. - [ ] Luật đọc từ rulebook lúc chạy (xác minh D03 trên forum trước)
-4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ
+3. - [ ] **Ưu tiên ngang LLM (D16): đọc rulebook lúc chạy.** Đề yêu cầu dùng rulebook của đúng split (SPEC §7.1). Không xem rulebook public để định hướng code
+   - [x] Liệt kê tham số luật đang đặt cứng từ rulebook train, mỗi luật gắn mục rulebook và op chịu ảnh hưởng: `docs/RULEBOOK_PARAMS.md` (07/11). Đọc lúc chạy mới 4 tham số (ca, Tết); P✗: đầu tuần, phí phục vụ, size, quá/từ N, N ngày, tuổi nợ, làm tròn. Đề xuất đối chiếu rulebook theo dòng (hash), luật định nghĩa đổi thì abstain op liên quan: chờ duyệt
+   - [x] (07/11, D18) `datamate/rulebook.py`: tách rulebook thành 75 dòng luật, so hash với `rulebook_index.json` (sinh từ train bằng `analysis/build_rulebook_index.py`, không chứa chữ). Tham số (ca, Tết, đầu tuần) đọc lại khi chỉ đổi số; định nghĩa đổi/mất → chặn phạm vi (op/filter/loại kỳ); dòng mới → từ khoá chưa có trong train. Log chỉ ghi số đếm
+   - [x] Rulebook tổng hợp trên dev: train → giống hệt (dev 2410/0/37, holdout 485/10/58 byte-identical); S1 đổi ca + đầu tuần → 113 câu đổi đáp án, đúng 68 câu kỳ tuần + 45 câu ca, 0 câu khác; S2 đổi §1.1 → 0 sai, 2005 abstain. 11 test mới (166 pass)
+   - [x] **Public v0.8 với D18: 995/1000 abstain** (3 dòng đổi, 3 dòng mất, 25 dòng mới, 42 phạm vi bị chặn). Quyết định 07/11: giữ D18, không nộp v0.8, nộp v0.7 làm baseline; lấy lại độ phủ bằng nhánh 3 (D19)
+   - [x] (07/11, CPU, D19) Rule judge `parse/rule_judge.py`, **mặc định tắt**: mỗi dòng luật chạm câu hỏi một prompt (cách hệ thống tính `rulebook_impl.IMPL` + chữ dòng của split đọc lúc chạy); chỉ trả lời khi mọi dòng × mọi mẫu là `same` (tương đương hoàn toàn với phép tính); dòng train bị mất, lỗi, thiếu mẫu, JSON sai → abstain. Rulebook tổng hợp `eval/synth/rulebooks.py`, bước `judge_*` trong `run_all.sh` (bật judge khi ghi). Chỉ test bằng backend giả và replay rỗng: **chưa có kết quả suy luận thật**
+   - [ ] (khi có replay GPU) Đo judge: `judge_same` trên cosmetic (độ phủ lấy lại) và `judge_same` trên semantic (= số câu sẽ sai). Chỉ bật trong image khi semantic gần 0; chạy lại public bằng replay
+   - [ ] Nộp public bản có đọc rulebook (milestone)
+4. - [ ] SLM parser + ensemble gate (mục LLM bên dưới), thay gate từ lạ. Code CPU xong 07/11 (D14), còn chạy model
 5. - [ ] Code-gen fallback để cuối
 - [x] Song song: Dockerfile bản rule-only trước 10/11 (dự phòng)
    - [x] `docker/Dockerfile` (python:3.11-slim, deps pin `docker/requirements.txt`), `docker/predict.sh` → `/code/predict.sh`, `/code/training_code/data_manifest.json` (`docker/make_manifest.py`), `.dockerignore`. Image chứa code + `data/train/train`. 06/11: 142 test pass; giả lập `predict.sh` local (`DATAMATE_CACHE` → thư mục tạm) ghi đúng submission + `logs/log.jsonl`, cache không rơi vào repo
    - [x] Build + chạy thử `--network none --shm-size=16g -v <split>:/data:ro -v <out>:/result` (06/11, sau khi sửa PATH WSL): image 1.08GB, train 3000 câu trong 386s (CPU, gồm ingest nguội), submission container **giống hệt local 3000/3000**, `submit_check` PASS, log 3000 dòng. Chưa chạy với `--gpus` (máy không có GPU NVIDIA)
 
+**07/11 — Baseline public (D16)**
+- [x] Sinh lại public từ HEAD (LLM tắt) = v0.7, giống hệt v0.6, `/submit-check` PASS. **Nộp 09/11: PA public 0.114** (ước 162 đúng / 48 sai, precision ~77%). Baseline cho go/no-go 11/11
+
 **08–10/11 — LLM** (cần GPU)
-- [ ] Chốt model ≤ 15B, ghi vào `DECISIONS.md`
-- [ ] vLLM + guided JSON, prompt có few-shot từ dev
-- [ ] Ensemble + Confidence Gate, calibrate. **Mục tiêu PA holdout ≥ 0.85, precision ≥ 97%**
+- [x] (07/11, CPU) Phần không cần GPU (D14): contract `parse/llm_schema.py` (op = handler executor + `none`, kỳ lấy từ timeparse, mention link bằng Dictionary), backend `parse/llm.py` (vLLM offline guided JSON / replay jsonl ghi-đọc), ensemble `parse/ensemble.py` + `config.LLMConfig`, cờ `--llm/--llm-model/--llm-replay` cho `datamate.run` và `eval/run_eval.py` (`--by source`). Round-trip Intent → JSON → Intent **2410/2410** câu dev đúng. Backend replay rỗng: dev 2410/0/37 không đổi. 153 test pass
+- [x] Few-shot từ dev (`analysis/build_fewshot.py`): 81 câu, 41 op, prompt ~16.7k ký tự (~7k token). 6 op chưa có câu dev đúng: import_minus_sales, stock_out_count, net_profit, delivery_count, nearest_expiry, expiring_lots_count
+- [x] (07/11) Quy trình GPU qua máy thành viên (D15): `docs/GPU_RUNBOOK.md`, `scripts/gpu/run_all.sh`, `eval/gpu_smoke.py`, chế độ ghi `DATAMATE_LLM_CALL_ALL`. Chặn lộ dữ liệu: gitignore/pre-commit/CI chặn mọi `.jsonl`, hook `eval/check_leak.py`, viết lại 5 câu test trùng train. Rà runbook lần 2: dòng 5090/FP8, AWQ fp16, RAM WSL, pin deps, đếm lỗi model trong summary
+- [ ] Thành viên GPU chạy runbook (hạn 10/11): smoke + dev + holdout + public cho Qwen3-8B và 14B, bundle lên Drive, PR `docs/gpu_runs/`. Kiểm tra guided JSON trên bản vLLM đó, bản đó thành bản pin
+- [ ] (CPU) Chốt model ≤ 15B từ replay: độ khớp signature với rule trên dev, thời gian/câu, VRAM; ghi `DECISIONS.md`. 14B BF16 cần TP=2 hoặc FP8 trên 5090 (D15)
+- [x] (CPU, 07/11) Thêm cờ `--llm/--llm-model/--llm-replay` cho `eval/synth/run.py` (câu synth = câu dev nên replay dev dùng được; in `llm_calls/llm_failed` = replay miss). Replay rỗng: rename 2 shop giống hệt rule-only
+- [ ] (CPU, khi có replay) Đo proxy synth bằng replay dev: `eval/synth/run.py --llm replay --llm-model models/<M> --llm-replay <dev replay>`
+- [ ] Calibrate ensemble trên replay (CPU): `rescue_gate` (mặc định bật), `require_agreement`, `llm_only` + `n_samples`. **Mục tiêu PA holdout ≥ 0.85, precision ≥ 97%**
+   - [x] (07/11) Công cụ `eval/calibrate.py`: một lượt parse + LLM từ replay, so 5 chính sách (rule, rescue, rescue+agree, rescue+llm_only, cả ba) trên cùng đầu ra model; chẩn đoán `llm_valid`, đồng ý với rule khi rule đúng/sai, gate-blocked, `replay_miss` (cảnh báo khi replay không khớp). Holdout chỉ số tổng. `pipeline.analyse` tách `parse_question` + `finish` (dev byte-identical). Test bằng model giả (echo intent rule): chỉ kiểm đường đi
+   - [ ] Chạy trên replay thật dev + holdout cho từng model, chọn model + chính sách, ghi `DECISIONS.md`
+- [ ] Image LLM: base CUDA ≥ 12.8 + vLLM pin, weights trong image, so container với local như bản rule-only
+   - [x] (07/11) `docker/Dockerfile.llm` (base `vllm/vllm-openai:v0.10.1.1`, weights qua `--build-context weights=`, kiểm sha few-shot lúc build, cache vào `/tmp`, TP=2, `NCCL_P2P_DISABLE=1`, judge tắt), `scripts/gpu/check_image.sh` (lệnh BTC + submit_check + PA train), runbook mục 6b. `run.py`: không load được model thì chạy rule-only (đã thử). **Dockerfile chưa build lần nào**: build local bị dừng khi đang tải base (máy thiếu RAM)
+   - [ ] Build + chạy `check_image.sh` trên máy GPU có weights (runbook 6b), so PA train với local
+
+**11/11 — Go/no-go 1 (D16)**
+- [ ] So PA public các milestone (baseline, rulebook, LLM). Ngưỡng chốt sau khi có baseline. Không đạt thì dừng LLM, dồn sức cho đọc rulebook và ingest, nộp image rule-only
 
 **10–12/11 — Mở rộng**
-- [ ] Fallback code-gen cho câu OOD
-- [ ] Luật ngành bổ sung, đọc rulebook lúc chạy
+- [ ] Fallback code-gen cho câu OOD (Rule 5 cho phép; ngân sách ~40s/câu). Chỉ làm sau khi rulebook + LLM xong
 - [ ] Dữ liệu tự sinh: paraphrase có lỗi gõ (shop tổng hợp đổi schema: kéo lên bước 1 ở trên)
 
 ### Phase 3 — Test (song song, chốt 15/11)
@@ -85,11 +149,17 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
 
 ### Phase 4 — Deploy (12–16/11)
 - [ ] Dockerfile (CUDA ≥ 12.8, weights đóng gói sẵn), chạy `--network none`
-- [ ] Nộp public (≤ 5 lần/ngày), ghi kết quả vào `EXPERIMENTS.md`
-- [ ] **Nộp image cuối trước 16/11 23:59**
+- [ ] Nộp public (≤ 5 lần/ngày), model type **"Based on small models (<=15B)"** (D15), ghi kết quả vào `EXPERIMENTS.md`
+- [ ] Base image theo Docker Guide (`vllm/vllm-openai:v0.10.1.1` hoặc bản khác chạy được trên 5090), tag `zaic2026_datamate_<team>:final`, `ENTRYPOINT []`
+- [ ] README bài nộp khai báo model (Rule 2)
+- [ ] Upload image lên **Google Drive public** + checksum, thử tải về từ máy khác (image ~30–40 GB: upload trước 15/11)
+- [ ] Chạy thử quy trình private từ đầu tới cuối trên public: tải image từ Drive → `docker load` → lệnh BTC → `/submit-check` → so với local
+- [ ] **Nộp image cuối trước 16/11 23:59** qua form "Solution Submission"
 
-### Phase 5 — Maintain (20–23/11)
-- [ ] Theo dõi kết quả private
+### Phase 5 — Private (20–23/11)
+- [ ] **Đặt GPU trước 16/11** cho 20–23/11 (máy thành viên hoặc thuê 2× 5090): chạy đúng image đã nộp
+- [ ] 20/11 09:00 tải private → chạy image → `/submit-check` → upload `submission.jsonl` trước 23/11 23:59. Giữ log để giải trình nếu lệch > 0.03
+- [ ] Theo dõi bảng tạm. Top 2 công bố 02/12
 - [ ] Public code (quy định 8.2), viết writeup
 
 ## Rủi ro
@@ -97,7 +167,9 @@ Holdout 0.86 nhưng public 0.08: holdout cùng ngành với dev nên không đo 
 | Rủi ro | Phương án |
 |---|---|
 | Private có ngành/luật/kiểu file mới | Map README theo mô tả, đọc rulebook lúc chạy, nhánh code-gen dự phòng, abstain mặc định |
-| Máy dev không có GPU | Executor và rule parser làm trên CPU. Thuê GPU cho phần LLM và Docker |
+| Máy dev không có GPU | Executor và rule parser làm trên CPU. GPU thành viên cho LLM (D15), thuê 5090 cho Docker |
+| Không có GPU trong 20–23/11 | Đặt trước 16/11, có phương án thuê dự phòng. Image rule-only chạy được trên CPU làm phương án cuối |
+| Rulebook private khác train | Đọc rulebook lúc chạy (bước 3), test bằng rulebook tổng hợp |
 | Kết quả không deterministic | temp 0, seed cố định, pin phiên bản, sắp xếp ổn định |
 | Chạy chậm | Cache Store, batch LLM, timeout mỗi câu (quá giờ thì abstain) |
 | Hiểu sai luật | Mỗi luật có test riêng từ câu train. Báo cáo lỗi theo intent |

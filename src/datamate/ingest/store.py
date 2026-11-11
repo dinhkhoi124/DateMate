@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import pickle
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -21,7 +22,7 @@ from datamate.ingest.readme import ReadmeSpec, parse_readme
 from datamate.ingest.reader import read_shop
 from datamate.ingest.tables import Table, build_table
 from datamate.ingest.values import (
-    CANCELLED, DONE, RETURNED, SHIPPING, clean_text, fold, is_blank, is_walkin, parse_bool, parse_date,
+    CANCELLED, DONE, RETURNED, SHIPPING, UNKNOWN, clean_text, fold, is_blank, is_walkin, parse_bool, parse_date,
     parse_datetime, parse_number, parse_payment, parse_qty, parse_status, parse_time,
 )
 
@@ -115,16 +116,21 @@ class Store:
     @classmethod
     def build(cls, shop_dir: Path | str, use_cache: bool = True) -> "Store":
         shop_dir = Path(shop_dir)
-        ck = _cache_path(shop_dir)
-        if use_cache and ck and ck.exists():
-            with open(ck, "rb") as f:
-                return pickle.load(f)
+        ck = _cache_path(shop_dir) if use_cache else None
+        if ck:
+            _prune_stale_cache(ck.parent)
+            if ck.exists():
+                try:
+                    with open(ck, "rb") as f:
+                        return pickle.load(f)
+                except (OSError, EOFError, pickle.UnpicklingError, AttributeError, ImportError):
+                    pass   # removed by a concurrent prune, or half-written: rebuild
         spec = parse_readme(shop_dir / "README.md")
         tables = [build_table(t) for t in read_shop(shop_dir, spec)]
         st = cls(business_id=shop_dir.name, spec=spec)
         st.table_kinds = [(t.name, t.kind, dict(t.roles)) for t in tables]
         st._assemble(tables)
-        if use_cache and ck:
+        if ck:
             try:
                 ck.parent.mkdir(parents=True, exist_ok=True)
                 with open(ck, "wb") as f:
@@ -536,6 +542,14 @@ class Store:
         d["_from_lines"] = True
         self.products = pd.concat([P, d], ignore_index=True)
 
+    def _status_of(self, x):
+        """Raw status -> status: the shop README's own explanation of its values first (readme.status_legend),
+        then the generic vocabulary (values.parse_status). None = not understood."""
+        if is_blank(x):
+            return None
+        m = getattr(self.spec, "status_map", None) or {}
+        return m.get(fold(str(x).strip())) or parse_status(x)
+
     def _resolve_orders(self):
         L, O = self.lines, self.orders
         if not len(L) and not len(O):
@@ -543,7 +557,7 @@ class Store:
         # line-derived order facts
         if len(L):
             g = L.groupby("order_id", sort=False)
-            stp = _umap(L["_raw_status"].astype(object), lambda x: None if is_blank(x) else parse_status(x))
+            stp = _umap(L["_raw_status"].astype(object), lambda x: None if is_blank(x) else self._status_of(x))
             lo = g[["order_date", "order_dt", "_raw_status", "_raw_note", "_raw_customer_id", "_raw_customer_name",
                     "_raw_channel", "_raw_payment_method", "_raw_staff_id"]].first()
             lo.columns = ["l_date", "l_dt", "l_status_raw", "l_note_raw", "l_customer_id", "l_customer_name",
@@ -595,10 +609,10 @@ class Store:
         O["note"] = _umap(O["_raw_note"].astype(object), clean_text)
 
         # status (rulebook §1/§8): cancelled > returned (any evidence) > shipping > done
-        st_raw = _umap(O["_raw_status"].astype(object), parse_status)
+        st_raw = _umap(O["_raw_status"].astype(object), self._status_of)
         st_note = _umap(O["note"].astype(object), parse_status)
         has_status_col = O["_raw_status"].notna().any()
-        unknown_raw = O["_raw_status"].notna() & st_raw.isna()
+        unknown_raw = O["_raw_status"].notna() & st_raw.isna() & ~_umap(O["_raw_status"].astype(object), is_blank).astype(bool)
         if unknown_raw.any():
             vals = sorted({str(v) for v in O.loc[unknown_raw, "_raw_status"].unique()})[:10]
             self.warnings.append(f"unrecognized status values: {vals}")
@@ -611,8 +625,10 @@ class Store:
             if t.col("order_id") is not None:
                 returned_ev |= O["order_id"].isin(set(t.col("order_id").map(clean_text).dropna()))
         cancelled = (base_st == CANCELLED) | O["l_any_cancelled"].fillna(False).astype(bool)
+        # known-invalid (cancelled/returned) > known-valid shipping > unknown (written, unexplained) > done
+        unknown = unknown_raw.fillna(False).astype(bool).values if has_status_col else np.zeros(len(O), bool)
         status = np.where(cancelled, CANCELLED, np.where(returned_ev, RETURNED,
-                          np.where(base_st == SHIPPING, SHIPPING, DONE)))
+                          np.where(base_st == SHIPPING, SHIPPING, np.where(unknown, UNKNOWN, DONE))))
         O["status"] = status
         # rulebook §1: revenue of an order = sum of line amounts; shops with only an invoice list use the
         # order-level 'tiền hàng' (sum of line amounts before order discount, README vocabulary)
@@ -680,8 +696,9 @@ def _cache_path(shop_dir: Path) -> Path | None:
         for p in sorted(shop_dir.iterdir()):
             st = p.stat()
             sig.append(f"{p.name}|{st.st_size}|{st.st_mtime_ns}")
-        h = hashlib.md5(("|".join(sig) + STORE_VERSION + _code_sig()).encode()).hexdigest()[:16]
-        return _cache_dir() / f"{shop_dir.name}_{h}.pkl"
+        gen = _cache_gen()
+        h = hashlib.md5(("|".join(sig) + gen).encode()).hexdigest()[:16]
+        return _cache_dir() / f"{shop_dir.name}_{gen}_{h}.pkl"
     except OSError:
         return None
 
@@ -691,6 +708,45 @@ def _code_sig() -> str:
     here = Path(__file__).parent
     return "".join(str(p.stat().st_mtime_ns) for p in sorted(here.glob("*.py"))) + \
         str((here / "learned_names.json").stat().st_mtime_ns)
+
+
+def _cache_gen() -> str:
+    """Cache generation: STORE_VERSION + ingest code. Entries of another generation are never read again."""
+    return hashlib.md5((STORE_VERSION + _code_sig()).encode()).hexdigest()[:8]
+
+
+# <shop>_<gen8>_<hash16>.pkl (current layout) or <shop>_<hash16>.pkl (layout before generations)
+_CACHE_NAME = re.compile(r"^.+?(?:_([0-9a-f]{8}))?_[0-9a-f]{16}\.pkl$")
+_pruned: set[tuple[str, str]] = set()
+
+
+def _prune_stale_cache(cache_dir: Path) -> int:
+    """Delete store cache entries written by other ingest code (once per process and directory).
+
+    Only files named like a store entry are touched, and only those of another generation: an entry of the current
+    code is kept whatever its shop or data directory (train, synth and test shops can share a shop name). Errors (file
+    in use, already removed by a concurrent run) are ignored; a later run retries.
+    """
+    gen = _cache_gen()
+    key = (str(cache_dir), gen)
+    if key in _pruned:
+        return 0
+    _pruned.add(key)
+    removed = 0
+    try:
+        entries = list(cache_dir.iterdir())
+    except OSError:
+        return 0
+    for p in entries:
+        m = _CACHE_NAME.match(p.name)
+        if not m or m.group(1) == gen or not p.is_file():
+            continue
+        try:
+            p.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 __all__ = ["Store", "name_key", "date"]

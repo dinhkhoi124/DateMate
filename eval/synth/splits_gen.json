@@ -1,0 +1,10 @@
+{
+  "_note": "Agent-generalization benchmark (E0, docs/BENCHMARK.md). Dev shops only; holdout (eval/splits.json) never used. A = Synth-Tune (traces may be read, fixes may be motivated here). B = Synth-Eval (aggregates only, like holdout). B = one shop per export style; biz_105 (hand-kept book, one sheet per month) has no A counterpart (leave-style-out). Shops whose dev questions were inspected on 2026-11-11 (101, 106, 118, 119, 121, 124) are kept out of B.",
+  "seed": 20261111,
+  "per_shop": 8,
+  "first_by_id": 3,
+  "targeted_per_shop": 2,
+  "A": ["biz_101", "biz_102", "biz_104", "biz_106", "biz_107", "biz_111", "biz_112", "biz_115",
+        "biz_116", "biz_118", "biz_119", "biz_120", "biz_121", "biz_124", "biz_126", "biz_129"],
+  "B": ["biz_105", "biz_108", "biz_109", "biz_113", "biz_114", "biz_122", "biz_127", "biz_130"]
+}

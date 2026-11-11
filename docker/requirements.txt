@@ -1,7 +1,9 @@
 # Pinned runtime deps for the rule-only image (same versions as the dev .venv, 2026-11-05).
 # Pinning keeps two runs of the image identical (SPEC §5: rerun must stay within 0.03 PA).
+# numpy < 2.3 (D17): vllm 0.10.1.1 (Docker Guide base) needs numba 0.61.2, which needs numpy < 2.3.
+# 2.2.6 vs 2.4.6 verified identical: dev 2447/2447 and holdout 553/553 submissions, few-shot sha256.
 pandas==3.1.0
-numpy==2.4.6
+numpy==2.2.6
 openpyxl==3.1.5
 python-calamine==0.9.1
 duckdb==2.0.0

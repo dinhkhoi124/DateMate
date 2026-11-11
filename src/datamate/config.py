@@ -6,11 +6,8 @@ Defaults are the train rulebook values; `from_rulebook(text)` re-reads them from
 from __future__ import annotations
 
 import os
-import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
-
-from unidecode import unidecode
 
 
 @dataclass(frozen=True)
@@ -26,28 +23,10 @@ class Rules:
 DEFAULT = Rules()
 
 
-def _hms(h, m):
-    return int(h) * 3600 + int(m) * 60
-
-
 def from_rulebook(text: str | None) -> Rules:
-    if not text:
-        return DEFAULT
-    t = unidecode(text).lower()
-    r = DEFAULT
-    m = re.search(r"ca sang (\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})", t)
-    if m:
-        r = replace(r, morning=(_hms(m[1], m[2]), _hms(m[3], m[4]) + 59))
-    m = re.search(r"ca chieu (\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})", t)
-    if m:
-        r = replace(r, afternoon=(_hms(m[1], m[2]), _hms(m[3], m[4]) + 59))
-    m = re.search(r"tu ngay duong cua \**(\d{1,2}) thang chap", t)
-    if m:
-        r = replace(r, tet_start=(int(m[1]), 12))
-    m = re.search(r"mung (\d{1,2}) thang gieng", t)
-    if m:
-        r = replace(r, tet_end=(int(m[1]), 1))
-    return r
+    """Rules of a split's rulebook (D07, D18): parameters re-read only from rows that match the train rule template."""
+    from datamate.rulebook import analyse  # noqa: PLC0415  (rulebook imports this module)
+    return analyse(text).rules
 
 
 @dataclass(frozen=True)
@@ -76,6 +55,100 @@ class Invariants:
 
 
 INVARIANTS = Invariants()
+
+
+@dataclass(frozen=True)
+class LLMConfig:
+    """LLM parser + ensemble (DECISIONS D14). backend 'off' = rule-only pipeline, unchanged behaviour.
+    Env: DATAMATE_LLM (off|vllm|replay), DATAMATE_LLM_MODEL (local weights dir), DATAMATE_LLM_REPLAY (jsonl),
+    DATAMATE_LLM_SAMPLES, DATAMATE_LLM_MODEL_ID, DATAMATE_LLM_CALL_ALL, DATAMATE_LLM_RULE_JUDGE (1 = on),
+    DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}, DATAMATE_LLM_PREFIX_CACHE (0 = off),
+    DATAMATE_LLM_THINKING (1 = Qwen3 enable_thinking)."""
+    backend: str = "off"
+    model_path: str = ""
+    model_id: str = ""                      # cache key part; defaults to the weights dir name
+    dtype: str = "bfloat16"
+    max_model_len: int = 12288                # prompt ~7k tokens (81 few-shot), prefix-cached
+    gpu_memory_utilization: float = 0.85
+    tensor_parallel_size: int = 1
+    # off on GPUs < sm80 (T4): vLLM's Triton prefix-prefill kernel does not compile for sm75 (Kaggle, 09/11)
+    prefix_caching: bool = True
+    max_tokens: int = 256
+    n_samples: int = 1                      # > 1: self-consistency votes, sampled at `temperature`
+    temperature: float = 0.7
+    top_p: float = 0.95
+    seed: int = 2026
+    chat_template_kwargs: dict = None       # e.g. {"enable_thinking": False} for Qwen3
+    replay_path: str = ""
+    # ensemble policy (parse/ensemble.py); defaults keep every current rule answer and only add rescued ones
+    rescue_gate: bool = True                # gate-blocked rule intent answered when every LLM sample agrees with it
+    require_agreement: bool = False         # also abstain on gate-passed rule intents the LLM disagrees with
+    llm_only: bool = False                  # answer when the rule parser has nothing and all samples agree
+    llm_only_min_votes: int = 3
+    # record mode (D15): call the model on every question so a replay covers every policy; decisions unchanged
+    call_all: bool = False
+    # rule judge (D18 branch 3, D19, parse/rule_judge.py): an intent blocked by a rulebook change is answered only when
+    # every sample says the split's rule computes exactly what the executor computes. OFF until calibrated (D19):
+    # DATAMATE_LLM_RULE_JUDGE=1 turns it on (scripts/gpu/run_all.sh records with it on)
+    rule_judge: bool = False
+    judge_min_votes: int = 1
+
+    def __post_init__(self):
+        if self.chat_template_kwargs is None:
+            object.__setattr__(self, "chat_template_kwargs", {"enable_thinking": False})
+        if not self.model_id and self.model_path:
+            object.__setattr__(self, "model_id", Path(self.model_path).name)
+
+    @classmethod
+    def from_env(cls, **kw) -> "LLMConfig":
+        env = {"backend": os.environ.get("DATAMATE_LLM", "off"), "model_path": os.environ.get("DATAMATE_LLM_MODEL", ""),
+               "replay_path": os.environ.get("DATAMATE_LLM_REPLAY", "")}
+        if os.environ.get("DATAMATE_LLM_SAMPLES"):
+            env["n_samples"] = int(os.environ["DATAMATE_LLM_SAMPLES"])
+        if os.environ.get("DATAMATE_LLM_MODEL_ID"):
+            env["model_id"] = os.environ["DATAMATE_LLM_MODEL_ID"]
+        # GPU-side knobs for the teammate machine (docs/GPU_RUNBOOK.md); none of them is part of the replay key
+        for var, field, typ in (("DATAMATE_LLM_DTYPE", "dtype", str), ("DATAMATE_LLM_TP", "tensor_parallel_size", int),
+                                ("DATAMATE_LLM_GPU_UTIL", "gpu_memory_utilization", float),
+                                ("DATAMATE_LLM_MAX_LEN", "max_model_len", int)):
+            if os.environ.get(var):
+                env[field] = typ(os.environ[var])
+        if os.environ.get("DATAMATE_LLM_THINKING", "") not in ("", "0"):   # Qwen3 reasoning mode (code-gen A/B)
+            env["chat_template_kwargs"] = {"enable_thinking": True}
+        if os.environ.get("DATAMATE_LLM_PREFIX_CACHE", "") == "0":
+            env["prefix_caching"] = False
+        if os.environ.get("DATAMATE_LLM_CALL_ALL", "") not in ("", "0"):
+            env["call_all"] = True
+        if os.environ.get("DATAMATE_LLM_RULE_JUDGE", "") not in ("", "0"):
+            env["rule_judge"] = True
+        return cls(**{**env, **kw})
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    """Code-gen agent (D20, ARCHITECTURE §8). Env: DATAMATE_AGENT (off|codegen), DATAMATE_AGENT_{SAMPLES,MIN_VOTES,
+    POLICY,TIMEOUT,MAX_TOKENS}. The model/backend itself comes from LLMConfig (DATAMATE_LLM*)."""
+    enabled: bool = False
+    n_samples: int = 5                  # k samples per question (temperature from LLMConfig)
+    # answer only when >= m samples give the same canonical answer. D21: chosen on train dev only (code-gen alone,
+    # Kaggle v3 + CPU reexec 1a1550e: m=2 PA 0.653 > m=3 0.611); these defaults ARE the official submission config
+    min_votes: int = 2
+    max_tokens: int = 1536
+    timeout_s: float = 20.0             # per sample execution
+    allow_unanswerable: bool = False    # code-gen 'unanswerable' -> abstain until calibrated (CLAUDE.md rule 5)
+    # rule x code-gen: 'codegen' (ignore rule), 'rule_first' (rule answer when it has one), 'agree' (rule answer
+    # only when code-gen agrees or has no majority; rule abstained -> code-gen)
+    policy: str = "agree"
+
+    @classmethod
+    def from_env(cls, **kw) -> "AgentConfig":
+        env: dict = {"enabled": os.environ.get("DATAMATE_AGENT", "off") == "codegen"}
+        for var, fld, typ in (("DATAMATE_AGENT_SAMPLES", "n_samples", int), ("DATAMATE_AGENT_MIN_VOTES", "min_votes", int),
+                              ("DATAMATE_AGENT_POLICY", "policy", str), ("DATAMATE_AGENT_TIMEOUT", "timeout_s", float),
+                              ("DATAMATE_AGENT_MAX_TOKENS", "max_tokens", int)):
+            if os.environ.get(var):
+                env[fld] = typ(os.environ[var])
+        return cls(**{**env, **kw})
 
 
 def cache_root() -> Path:

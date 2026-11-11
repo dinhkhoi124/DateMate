@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-from datamate.pipeline import Context, abstain, answer  # noqa: E402
+from datamate.pipeline import Context, answer_many  # noqa: E402
+from datamate.run import make_agent, make_llm  # noqa: E402
 from eval.scorer import evaluate, load_jsonl, score  # noqa: E402
 
 TRAIN = ROOT / "data" / "train" / "train"
@@ -33,9 +34,17 @@ def intent_of(question: str) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="dev", choices=["dev", "holdout", "all"])
-    ap.add_argument("--by", default="intent", choices=["intent", "shop", "type"])
+    ap.add_argument("--by", default="intent", choices=["intent", "shop", "type", "source"])
+    ap.add_argument("--rulebook", help="use this rulebook.md instead of the split's (synthetic-rulebook tests, D18)")
     ap.add_argument("--errors", type=int, default=0, help="print N wrong answers (never for holdout)")
     ap.add_argument("--only", nargs="*", help="restrict to business_ids (dev only)")
+    ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
+    ap.add_argument("--llm-model", help="local weights dir")
+    ap.add_argument("--llm-replay", help="replay/record jsonl")
+    ap.add_argument("--agent", choices=["off", "codegen"], help="code-gen agent, D20 (default: $DATAMATE_AGENT or off)")
+    ap.add_argument("--per-shop", type=int, default=0,
+                    help="keep the first N questions of each shop by id (deterministic subsample for GPU runs)")
+    ap.add_argument("--trace", action="store_true", help="write trace.jsonl (code, samples, votes) to the run dir")
     args = ap.parse_args()
 
     holdout = set(json.loads((ROOT / "eval" / "splits.json").read_text(encoding="utf8"))["holdout"])
@@ -49,15 +58,23 @@ def main():
         if args.split == "holdout":
             sys.exit("--only is not allowed on holdout")
         qs = [q for q in qs if q["business_id"] in set(args.only)]
+    if args.per_shop:
+        keep, seen = set(), defaultdict(int)
+        for q in sorted(qs, key=lambda q: q["id"]):
+            if seen[q["business_id"]] < args.per_shop:
+                seen[q["business_id"]] += 1
+                keep.add(q["id"])
+        qs = [q for q in qs if q["id"] in keep]
 
-    ctx = Context(root=TRAIN)
-    preds, t0 = [], time.time()
-    for q in qs:
-        try:
-            preds.append(answer(q, ctx))
-        except Exception as e:  # report, don't crash
-            print(f"ERR {q['id']}: {e!r}", file=sys.stderr)
-            preds.append(abstain(q["id"]))
+    llm = make_llm(args.llm, args.llm_model, args.llm_replay)
+    agent = make_agent(llm, TRAIN, args.rulebook, enabled=args.agent == "codegen" if args.agent else None)
+    ctx = Context(root=TRAIN, llm=None if agent else llm, rulebook=args.rulebook, agent=agent)   # D20: rule side pure
+    preds, sources, traces, t0 = [], {}, {}, time.time()
+    for q, row, tr in answer_many(qs, ctx):   # never raises per question (abstain + error in trace)
+        preds.append(row)
+        sources[q["id"]] = (tr.get("inputs") or {}).get("source", "-")
+        if args.trace:
+            traces[q["id"]] = tr
     elapsed = time.time() - t0
 
     gl = [golds[q["id"]] for q in qs]
@@ -70,7 +87,8 @@ def main():
     rows = []
     for q in qs:
         g = golds[q["id"]]
-        key = {"intent": lambda: intent_of(q["question"]), "shop": lambda: q["business_id"], "type": lambda: g["type"]}[args.by]()
+        key = {"intent": lambda: intent_of(q["question"]), "shop": lambda: q["business_id"], "type": lambda: g["type"],
+               "source": lambda: sources.get(q["id"], "-")}[args.by]()
         s = score(pm.get(q["id"]), g)
         groups[key][{1: 0, -1: 1, 0: 2}[s]] += 1
         if s == -1:
@@ -81,6 +99,12 @@ def main():
     with open(run_dir / "submission.jsonl", "w", encoding="utf8") as f:
         for p in preds:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
+    if args.trace:   # train questions only (gitignored run dir); eval/calibrate_agent.py reads it on CPU
+        with open(run_dir / "trace.jsonl", "w", encoding="utf8") as f:
+            for q in qs:
+                tr = {k: v for k, v in traces.get(q["id"], {}).items() if k != "_t0"}
+                f.write(json.dumps({"id": q["id"], "business_id": q["business_id"], "row": pm.get(q["id"]),
+                                    **tr}, ensure_ascii=False, default=str) + "\n")
     (run_dir / "report.json").write_text(json.dumps({"summary": summary, "by": {k: v for k, v in groups.items()}},
                                                     ensure_ascii=False, indent=1), encoding="utf8")
 
@@ -93,6 +117,13 @@ def main():
         print(f"\n--- {min(args.errors, len(rows))} wrong answers ---")
         for q, p, g in rows[: args.errors]:
             print(f"{q['business_id']} {q['as_of_date']} | {q['question']}\n   pred={json.dumps(p, ensure_ascii=False)[:160]}\n   gold={json.dumps({'type': g['type'], 'answer': g['answer']}, ensure_ascii=False)[:160]}")
+    if ctx.llm is not None:
+        print(ctx.llm.stats_line())
+    if ctx.judge is not None:
+        print(ctx.judge.stats_line())
+    if ctx.agent is not None:
+        print(ctx.agent.stats_line())
+        ctx.agent.close()
     print(f"\nrun dir: {run_dir.relative_to(ROOT)}")
 
 

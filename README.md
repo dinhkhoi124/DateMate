@@ -4,6 +4,8 @@
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+> **Thành viên mới nhận dự án: đọc [`docs/HANDOVER.md`](docs/HANDOVER.md) trước tiên.**
+
 Agent trả lời câu hỏi tiếng Việt trên dữ liệu bảng (csv / xlsx / sqlite) của các shop nhỏ, track **DataMate**.
 
 Điểm chấm là **PA = (Đúng − Sai) / N**. Trả lời sai bị trừ 1, còn abstain (từ chối trả lời) được 0. Vì vậy hệ thống
@@ -91,7 +93,7 @@ unzip public_test.zip -d data/public_test
 
 ```bash
 .venv/Scripts/python -m pytest tests -q
-# Có data: 142 passed. Chưa có data: 138 passed, 4 skipped.
+# Có data (11/11): 202 passed, 1 skipped. Chưa có data thì một số test tự skip.
 .venv/Scripts/ruff check src eval analysis tests
 ```
 
@@ -157,10 +159,11 @@ thele/                 thể lệ cuộc thi
 
 | Tài liệu | Đọc khi |
 |---|---|
+| [`docs/HANDOVER.md`](docs/HANDOVER.md) | **Bắt đầu từ đây** (bàn giao 11/11): hiện trạng, phân vai, lịch đến private |
 | [`docs/SPEC.md`](docs/SPEC.md) | Cần biết đề, định dạng đáp án, luật nộp bài, trả lời của BTC |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Cần hiểu pipeline và module |
 | [`docs/PLAN.md`](docs/PLAN.md) | Muốn biết việc đang làm và việc còn mở (checklist theo ngày) |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Muốn biết vì sao làm như vậy (D01–D12) |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Muốn biết vì sao làm như vậy (D01–D23) |
 | [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Muốn xem số liệu từng phiên bản và các lần nộp public |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | Cần biết phân vai, cách dùng GPU (Kaggle / thuê 5090) |
 

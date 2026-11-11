@@ -17,7 +17,6 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
-from unidecode import unidecode
 
 from datamate.ingest.reader import _detect_header, _doc_for, _known_names, _read_excel_all, fix_mojibake, sheet_period
 from datamate.ingest import readme as _readme
@@ -352,37 +351,6 @@ def t_status_note(shop: Shop, rng):
         shop.readme = "".join(parts)
 
 
-# other wordings real sales software / hand-kept books use for the four rulebook statuses. '?' marks a wording whose
-# status is ambiguous: a reader must not guess it (expected: abstain, never a wrong answer)
-STATUS_WORDS = {
-    "done": ["Hoàn tất", "Đã nhận hàng", "Giao hàng thành công", "Delivered", "HT - Hoàn thành", "Finished"],
-    "cancelled": ["Đã hủy bỏ", "Bị hủy", "Canceled", "Hủy - khách đổi ý", "Giao không thành công", "?Chuyển hoàn"],
-    "returned": ["Trả hàng/Hoàn tiền", "Khách trả lại", "Hoàn tiền", "Refunded", "Đã nhận hàng trả"],
-    "shipping": ["Chờ lấy hàng", "Đang đóng gói", "Chờ xác nhận", "In transit", "Chưa giao"],
-}
-_NOISE = [lambda s: s, str.upper, str.lower, lambda s: unidecode(s)]
-
-
-def t_status_words(shop: Shop, rng):
-    """Status values written differently (another software's labels), with shop-wide case / accent noise."""
-    from datamate.ingest.values import parse_status
-    noise = rng.choice(_NOISE)
-    pick: dict[str, str] = {}
-    for s in shop.sheets:
-        st = [j for j, h in enumerate(s.header) if isinstance(h, str) and
-              (squash(h) in ("trangthai", "tinhtrang", "status") or "trang thai don" in fold(s.doc.get(h, "")))]
-        if len(st) != 1 or "nhap" in fold(s.file):   # order statuses only, not import receipts
-            continue
-        j = st[0]
-        for r in s.rows:
-            if j < len(r) and isinstance(r[j], str) and r[j].strip():
-                v = r[j]
-                if v not in pick:
-                    k = parse_status(v)
-                    pick[v] = noise(rng.choice(STATUS_WORDS[k]).lstrip("?")) if k else v
-                r[j] = pick[v]
-
-
 TRANSFORMS = {
     "rename": [t_rename],
     "rename_hard": [t_rename_hard],
@@ -391,7 +359,6 @@ TRANSFORMS = {
     "values": [t_values],
     "status_note": [t_status_note],
     "combo": [t_rename, t_values, t_layout],
-    "status_words": [t_status_words],
 }
 
 

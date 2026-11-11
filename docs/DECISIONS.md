@@ -4,6 +4,351 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D25 — Trạng thái ba mức (hợp lệ / không hợp lệ / chưa biết) và đọc chú giải trạng thái trong README (2026-11-11)
+- **Bối cảnh:** ingest trên benchmark E0 (D24): `status_codes` và `status_newword` hỏng 24/24 shop. Giá trị trạng thái
+  không có trong từ vựng bị coi là `done` (đơn hợp lệ), nên đơn huỷ/trả bị tính vào doanh thu. Agent nhận đúng bảng đó.
+  Không shop dev nào có trạng thái lạ, nên train không lộ lỗi này.
+- **Lựa chọn:**
+  1. `ingest/readme.py::status_legend`: đọc câu README giải thích giá trị trạng thái: giá trị trong ngoặc kèm từ nối
+     (`'X' nghĩa là / là / tức là / = …`), và chú giải mã (`1 = …`, `A: …`, `0 -> …`) trên dòng nói về cột trạng
+     thái. Một cặp chỉ được nhận khi nhãn là từ trạng thái **đã có** trong từ vựng (`values.parse_status`). Giá trị
+     bị giải thích hai nghĩa thì bỏ. **Không thêm từ vựng mới** (bài học D23).
+  2. `Store._status_of`: chú giải README trước, từ vựng sau. Giá trị trạng thái **có ghi nhưng không hiểu** →
+     `UNKNOWN` (mới). `facts.valid = done | shipping`, nên `unknown` không bao giờ tính là đơn hợp lệ. Ô trống vẫn là
+     `done` như cũ. Cảnh báo `unrecognized status` và check D11 `status_unrecognized` giữ nguyên.
+- **Lý do:** CLAUDE.md luật 3 (suy ra từ README) và luật 5 (không chắc thì không đoán). Thà mất một số câu (abstain)
+  còn hơn cộng đơn huỷ vào doanh thu.
+- **Hệ quả:**
+  - Synthetic: `status_newword` 0 → 100% (A, B); `status_codes` 0 → 10/16 (A), 5/8 (B). Phần còn lại do generator
+    viết chú giải mâu thuẫn (BENCHMARK §7).
+  - Dev 2410/0/37 và holdout 485/10/58 không đổi; README dev không sinh cặp chú giải nào. 210 test pass, gồm test với
+    cách diễn đạt **khác** câu chữ của generator.
+  - Image rule-only (Test Solution #1, `3c5848c`) không có thay đổi này. Đưa vào image LLM hay không do PM quyết.
+  - Benchmark được niêm phong bằng hash nội dung (BENCHMARK §3), để thay đổi ingest này không mở băng D24.
+  - Phía agent: `status = 'unknown'` hiện trong `T`; xử lý trong prompt cần GPU, chưa làm.
+  - Câu chữ chú giải của generator giống nhau ở A và B, nên kết quả ingest B cho hai family này **không** phải bằng
+    chứng độc lập. Bằng chứng tổng quát là test với cách diễn đạt khác.
+
+---
+
+### D24 — Benchmark tổng quát hoá agent trên shop tổng hợp (E0), đóng băng (2026-11-11)
+- **Bối cảnh:** code-gen một mình dev 0.653 → holdout 0.444 → public ước precision ~60% (v2 0.117). Dev chỉ 72 câu
+  (SE PA ~0.08). Không được dùng public (D23) hay tuning trên holdout. Cần một thước đo shop lạ đủ lớn, có nhãn, để
+  chọn cải tiến cho agent. Rà code (11/11): agent chỉ thấy frame chuẩn của ingest (`agent/tables.py::frames_of`),
+  cột/bảng không map được bị bỏ; trên 24 shop dev `Store.extra` đều rỗng, nên train không lộ giới hạn này.
+- **Lựa chọn:**
+  1. Cell = (câu train, biến thể). Mỗi câu có cell `original` và một cell biến thể, mọi so sánh là so sánh cặp.
+     12 family trong 6 nhóm G1–G6 (`eval/synth/families.py`). Nhãn: `same` / `unanswerable` (`drop_table`) /
+     `recomputed` (`rule_param`, gold tính lại bằng rule engine, chỉ câu rule engine trả đúng trên bản gốc) /
+     `changed` (`rule_exception`, chỉ đo stale, không vào PA).
+  2. Chia theo shop gốc: A = Synth-Tune 16 shop, B = Synth-Eval 8 shop (một shop mỗi kiểu xuất, `biz_105`
+     leave-style-out), tham số biến đổi A ≠ B. B chỉ xem số tổng. Holdout không tạo biến thể.
+  3. Metric và luật nhận một thay đổi đăng ký trước E2 (`docs/BENCHMARK.md` §4–5): PA cặp, precision luôn kèm
+     coverage và answerable recall, forced-answer rate, stale rate, flip rate ngữ nghĩa, lỗi runtime/semantic theo
+     lớp, runtime median/p95 end-to-end theo giai đoạn, CI bootstrap theo shop kèm số shop/cell.
+  4. Đóng băng: `eval/synth/bench_cells.json` (534 cell, chỉ id + nhãn, `gen_hash 0d52d01775c9d7ec`) commit vào repo.
+     `run` từ chối chạy khi generator đổi. Muốn đổi thì `build --rebuild` kèm một D-entry mới.
+  5. Giữ nguyên phân bổ hiện tại dù `split_months` A chỉ có 3 shop (lead chọn, không build lại). Kết luận chỉ ở mức
+     nhóm và tổng theo side, không dùng riêng `split_months` A.
+- **Lý do:** shop tổng hợp từ train là nguồn shop lạ hợp lệ duy nhất (FAQ cho dùng train, cấm xử lý public). Chia
+  theo shop cùng tham số A/B khác nhau chặn hai kiểu leakage: theo shop và theo từ điển biến đổi. Đóng băng trước khi
+  chạy agent để luật nhận không bị chỉnh theo kết quả.
+- **Hệ quả:**
+  - Ingest (E0, không cần GPU): `status_codes` và `status_newword` hỏng ingest trên 24/24 shop (đơn huỷ/trả thành
+    hợp lệ), `layout` kiểu B hỏng 6/8 shop, `rename_tables` 1/16 shop A. Các family khác khớp 100%. Đây là bằng
+    chứng đầu tiên cho giả thuyết "schema đóng": lỗi ingest đi thẳng vào `T` của agent.
+  - Trace agent/pipeline ghi thời gian từng giai đoạn (`timing`), không đổi đáp án.
+  - Chưa có số agent trên benchmark. E2 cần GPU (ước khoảng 530 câu × 83 s/câu trên T4 ≈ 12 giờ Kaggle). Theo
+    HANDOVER, việc nộp image (Test Solution trước 15/11) được ưu tiên hơn E2.
+  - Giới hạn: B không phải shop lạ thật (24 shop dev đã dùng để phát triển ingest/rule), mỗi family chỉ 7–15 cell.
+
+---
+
+### D23 — Siết luật dùng public theo FAQ BTC; tái lập trên 2× 5090 là điều kiện nộp image (2026-11-10)
+- **Bối cảnh:** BTC gửi FAQ chung của track (bản lưu cục bộ `thele/ZALO-AI-CHALLENGE-2026.docx`, không commit). Các ý
+  liên quan DataMate:
+  - *"Tập public test không được sử dụng để train model và không được sử dụng trong quá trình inference. **Kể cả việc
+    xử lý tập public test để tạo ra thông tin train khác.**"* Câu này chặt hơn câu trả lời trước đó (SPEC §7.4: được
+    xem cấu trúc dữ liệu public), mà D11 mục 1 và D20 mục 4 đang dựa vào.
+  - Được đóng gói rulebook **train** trong Docker để phát hiện luật đổi lúc chạy. Không dùng rulebook public.
+  - Tái lập |ΔPA| ≤ 0.03: BTC chạy trên **2× 5090**, chạy lần 2 nếu lần 1 không khớp, không sửa code của đội. Batch
+    hay tuần tự là việc của đội.
+  - Docker nộp tối đa 2 lần trước 16/11, lấy lần cuối, **BTC không chạy thử trước**. Test Solution 1 lượt/ngày, đóng
+    23:59 ngày 15/11. Vòng private phải chạy bằng đúng Docker cuối cùng đã nộp.
+  - Log: câu trả lời bằng code thuần (không qua LLM) được để `code`/`output` rỗng. Hoà điểm thì xét thời gian inference.
+  - Dữ liệu cuộc thi không được dùng cho mục đích khác sau cuộc thi.
+- **Lựa chọn:**
+  1. **Thu hồi D20 mục 4 và quyền "xem cấu trúc public" của D11 mục 1.** Với public chỉ được: chạy hệ thống đã
+     commit để sinh `submission.jsonl` (Kaggle shard, `resubmit_agent.py` luồng chính thức, image), `/submit-check`
+     kiểm format, và nhận điểm leaderboard để theo dõi (D21). Không khảo sát cấu trúc file/README public, không phân
+     tích log public (kể cả số đếm lỗi, timeout, phân bố type) để định hướng sửa code. Chẩn đoán chỉ làm trên train
+     (dev, holdout tổng hợp, synth).
+  2. Rà soát: từ D20 đến nay `src/datamate/ingest` và `normalize` không có commit nào, nên D20 mục 4 chưa được dùng.
+     Dưới D11 có commit `aef6e9e` (05/11, từ vựng trạng thái `ingest/values.py`) làm ngay sau khi public v0.5 báo 2
+     shop `status_unrecognized`. Commit ghi là nhãn của phần mềm bán hàng khác, đo trên synth `status_words` của dev,
+     nhưng không có nhật ký xem public (D11 yêu cầu mà không ghi). Lúc đó BTC đã cho phép (SPEC §7.4). Giữ hay gỡ do
+     lead quyết, xem Hệ quả.
+  3. **Tái lập là điều kiện nộp image LLM:** trước khi nộp Solution, chạy cùng image 2 lần trên 2× 5090 với cùng
+     `/data` (train), ΔPA ≤ 0.03 (mục tiêu ≤ 0.01 để chừa biên cho private). Không đạt thì làm ổn định trước (thứ tự và
+     batch cố định, seed theo từng câu, giảm nhiệt độ hoặc greedy) và đo lại trên train, không nộp image chưa đo.
+  4. **Thứ tự nộp image:** mọi image dùng Test Solution trước. Solution chính thức lần 1 chỉ là image đã qua Test
+     Solution; lần 2 (cuối) là bản được tính, nên lần 2 phải là image đã qua cả Test Solution và kiểm tái lập.
+  5. Kaggle dataset chứa train/public để private và xoá sau cuộc thi. Repo public không chứa dữ liệu thi (hook
+     `check_leak` giữ nguyên).
+- **Lý do:** FAQ là câu trả lời mới nhất và chặt nhất của BTC; vi phạm luật dữ liệu có thể bị loại, còn lợi ích từ
+  việc xem public là nhỏ. Khác biệt trên 0.03 giữa hai lần chạy là bị loại, và BTC không chạy thử trước.
+- **Hệ quả:**
+  - SPEC §4/§5/§7.4 cập nhật theo FAQ. PLAN: bước nộp public v2 bỏ phân tích log public; mục 5090 2 lần thành điều
+    kiện bắt buộc.
+  - **Đã gỡ `aef6e9e`** (lead chọn, 2026-11-10): `git revert` phần code (`ingest/values.py`, synth `status_words`,
+    test). Dev 2410/0/37, holdout 485/10/58, agent code-gen một mình (reexec Kaggle v3) 0.653 m=2: không đổi. Nhãn
+    trạng thái lạ trở lại `status_unrecognized` → bất biến D11 abstain, không trả lời sai.
+  - Chưa có số về độ ổn định 2 lần của agent (k=5, temperature 0.7, seed cố định). Mức lệch ~22/72 câu giữa các lượt
+    Kaggle trước là giữa các prompt khác nhau, không dùng làm số đo tái lập.
+
+### D22 — Image LLM chạy agent D20 với Qwen3-14B-AWQ (2026-11-10)
+- **Bối cảnh:** `Dockerfile.llm` còn cấu hình D14: bật parser intent, few-shot bắt buộc, `Qwen3-14B` BF16, max len
+  12288. Mọi số đo của agent (Kaggle v2/v3, CPU reexec) đều trên `Qwen3-14B-AWQ`, fp16, không thinking, k=5. Mốc 12/11
+  phải có image chạy được. Model phải công bố trước 26/10/2026 và có license phù hợp: Qwen3-14B-AWQ công bố năm 2025 (bản gốc Qwen3 ra 04/2025), Apache-2.0.
+- **Lựa chọn:** image bật `DATAMATE_AGENT=codegen`, `MODEL=Qwen3-14B-AWQ`, `DTYPE=float16`, TP=2, `MAX_LEN=20480`,
+  `GPU_UTIL=0.90`, thinking tắt, prefix caching bật. k/m/policy lấy từ mặc định `AgentConfig` (D21), không đặt bằng
+  env. Bỏ bước kiểm few-shot (đường agent không dùng). Build chạy một bước kiểm cấu hình agent (import sandbox/helper,
+  `AgentConfig.enabled`, `max_model_len ≥ 16384`).
+- **Lý do:** chỉ đóng gói cấu hình đã đo. BF16 hoặc FP8 vừa 2× 5090 và có thể tốt hơn, nhưng chưa có số dev/holdout.
+  Đổi model phải đo lại trên train (D21) trước.
+- **Hệ quả:**
+  - **[5090]** Cần kiểm: AWQ trên sm120 (vLLM V1 chọn kernel awq_marlin), prefix caching, số giây/câu (giới hạn
+    6 giờ cho private), và chạy 2 lần lệch ≤ 0.03 (lấy mẫu có seed).
+  - Rule-only fallback giữ nguyên khi không load được model.
+
+### D21 — Tách luồng nộp chính thức khỏi thử nghiệm; không dùng điểm public để chọn hay tối ưu cấu hình (2026-11-10)
+- **Bối cảnh:** `eval/resubmit_agent.py` dựng submission public từ log GPU trên CPU, đổi được policy/m tuỳ ý. Một
+  đề xuất trước đó là nộp nhiều biến thể (agree/codegen) rồi so điểm public, tức là chọn cấu hình theo điểm public. Làm
+  vậy là tune trên public (trái D03) và overfit 1000 câu public.
+- **Lựa chọn:**
+  1. **Cấu hình chính thức = mặc định của `AgentConfig`** đã commit. Hiện tại: policy `agree`, k=5, **m=2**,
+     unanswerable tắt. m=2 được chọn theo tiêu chí đặt trước: PA cao nhất ở dòng code-gen một mình trên dev
+     (Kaggle v3 + reexec CPU 1a1550e: m=2 0.653, m=3 0.611).
+  2. **Luồng chính thức:** `resubmit_agent.py` không có `--experiment`. Không nhận `--policy/--m`, bỏ qua env, ghi
+     `submission.jsonl.meta.json` (commit, cờ dirty, config, số đếm). Mỗi lần chạy GPU trên public chỉ nộp một bản.
+  3. **Luồng thử nghiệm:** `--experiment`, `calibrate_agent.py`, `run_eval.py` chỉ chạy trên train (dev/holdout). Công
+     cụ từ chối `--experiment` khi split không có `answers.jsonl`.
+  4. Điểm public chỉ ghi vào bảng "Nộp public" của EXPERIMENTS.md để theo dõi tiến độ, không làm căn cứ đổi cấu hình,
+     prompt hay luật. Đổi cấu hình phải có số train mới và một entry DECISIONS.
+- **Lý do:** điểm public là tập cố định, nhỏ và lặp lại; chọn theo nó lạc quan giả và không chuyển sang private.
+- **Hệ quả:** cấu hình m=2 mới chỉ có dev 72 câu (nhiễu ±0.04). Cần holdout tổng hợp của agent (GPU) để xác nhận;
+  nếu holdout nói khác thì đổi theo holdout, không theo public. Docker image dùng cùng mặc định nên bản nộp image và
+  jsonl nhất quán.
+
+### D20 — Đổi trục: agent sinh code là đường chính, rule parser là đường nhanh + kiểm tra chéo; được xem cấu trúc dữ liệu public (2026-11-09) — mục 4 Superseded by D23
+- **Bối cảnh:**
+  - Public v0.7 = 0.114: trả lời 210/1000 (precision ~77%). Abstain 790 = gate từ lạ 460, rule parser không khớp 155,
+    bất biến ingest 120, executor 55 (đếm từ log, không đọc câu). ≥ 17 đội đạt 1.0 trên public.
+  - D18 chặn 995/1000 câu public: gần như mọi op chạm một dòng luật đã đổi. Executor đặt cứng nghĩa luật train, LLM
+    chọn op (D14) không sửa được điều đó. Private có rulebook riêng nên hướng cũ có trần thấp.
+  - Rule 5: agent "expected" sinh và chạy code. Ngân sách ~43 s/câu (500 câu / 6 giờ).
+  - BTC thêm kênh **Test Solution**: 1 image/ngày (link Google Drive + MD5), BTC chạy thật, kết quả để tham khảo.
+    Nộp `submission.jsonl` public vẫn 5 lần/ngày.
+- **Lựa chọn:**
+  1. **Đường chính = agent sinh code.** Context: toàn bộ rulebook của split (đọc lúc chạy) + README shop + schema và
+     vài dòng mẫu của bảng đã ingest + thư viện helper (timeparse, link tên, format §9). Model ≤ 15B sinh hàm
+     `solve()` pandas, chạy trong sandbox có timeout; lấy k mẫu, chỉ trả lời khi ≥ m mẫu cùng đáp án, còn lại abstain.
+  2. **Rule parser giữ làm đường nhanh và kiểm tra chéo**: khi dòng luật liên quan không đổi và qua gate. Rule và
+     code-gen lệch nhau → abstain (chính sách cụ thể calibrate sau).
+  3. **Đóng băng** D19 rule judge và calibrate ensemble D14 (giữ code, không đầu tư thêm). Không mở rộng op/template.
+  4. **Nới luật nội bộ (D11/D16):** được xem **cấu trúc file dữ liệu và README của public** (tên file, sheet, cột, nhãn
+     trạng thái) để làm reader tổng quát, đúng như BTC xác nhận (SPEC §7.4). Vẫn cấm: câu hỏi public, rulebook public,
+     hardcode theo shop. Log public có chữ câu hỏi (`normalized_question`) → chỉ đọc qua script tổng hợp số đếm.
+  5. **GPU:** dùng nguồn sẵn có trước (CPU local với backend giả hoặc model nhỏ để debug đường chạy, Kaggle/Colab cho
+     vòng lặp dev, Test Solution hằng ngày cho end-to-end). Máy 5090 của thành viên chỉ dùng cho việc bắt buộc đúng phần
+     cứng: build/kiểm image LLM, calibrate cuối, vòng private.
+- **Lý do:**
+  - Code-gen áp dụng được luật mới và ngành mới mà không cần viết op mới; bỏ phiếu k mẫu cho tín hiệu tự tin thay gate
+    từ lạ (gate D10 không phân biệt được đúng/sai trên public).
+  - Vẫn giữ CLAUDE.md luật 4: LLM sinh code, code tính số.
+- **Hệ quả:**
+  - ARCHITECTURE thêm §8 (agent v2); PLAN đổi lịch 09–16/11.
+  - Precision phụ thuộc ngưỡng bỏ phiếu: calibrate trên dev, holdout và rulebook tổng hợp `semantic`; mục tiêu ≥ 90%.
+  - Model 4-bit trên T4 (Kaggle) cho kết quả khác bản trên 5090 → đo lại bằng chính image cuối trước khi nộp.
+  - Image rule-only (`zaic2026_datamate_test:final`, logic v0.6/v0.7) là bản dự phòng và là Test Solution đầu tiên.
+
+### D19 — Rule judge: model chỉ xác nhận luật của split tương đương phép tính đang chạy (2026-11-07)
+- **Bối cảnh:**
+  - D18 chặn 995/1000 câu public. Nhánh LLM hiện tại chỉ sinh intent, còn executor vẫn tính theo nghĩa train. Vì
+    vậy, đưa chữ luật vào prompt intent không sửa được đáp án khi luật thật sự đổi.
+  - Một số câu bị chặn có thể không bị ảnh hưởng, ví dụ chỉ đổi câu chữ. Số câu như vậy chưa đo được.
+- **Lựa chọn:** `parse/rule_judge.py`, **mặc định tắt** (`DATAMATE_LLM_RULE_JUDGE=1` mới bật).
+  - Với mỗi dòng luật chạm câu hỏi, dựng **một prompt riêng**, gồm:
+    - phép tính sẽ chạy (op, bộ lọc, kỳ);
+    - cách hệ thống đang tính (`rulebook_impl.IMPL`, câu chữ của ta mô tả executor theo train);
+    - chữ của dòng đó trong rulebook split (đọc lúc chạy, đủ mọi cột, chỉ giữ trong bộ nhớ, không ghi log);
+    - câu hỏi.
+  - `same` chỉ khi luật của split, áp vào **đúng phép tính này cho câu hỏi này**, tính giống hệt executor: cùng tập
+    đơn/dòng, cùng khoản cộng trừ, cùng điều kiện, cùng cách đếm và làm tròn. Prompt cấm coi là `same` chỉ vì câu hỏi
+    không nhắc tới phần bị đổi. Dòng mới: `same` chỉ khi luật mới không đổi bước nào của phép tính.
+  - **Fail-closed:** chỉ trả lời khi mọi dòng × mọi mẫu (đủ `n_samples`, tối thiểu `judge_min_votes`) đều parse được
+    và là `same`. Các trường hợp sau đều abstain, không quay về đáp án rule:
+    - `different`, `unsure`, JSON sai hoặc ngoài enum;
+    - thiếu mẫu, backend lỗi, replay miss, exception;
+    - dòng train bị mất: không có định nghĩa để so, nên không gọi model.
+  - Thống kê tách `same / different / unsure / invalid / missing_row / failed`. `failed` là không có đầu ra model, không
+    phải verdict.
+  - Hiệu chỉnh: `eval/synth/rulebooks.py` sinh lúc chạy từ train (câu thêm là câu tự viết) hai biến thể trên 5 dòng
+    (§1.5, §1.6, §2.7, §3.3, §4.2): `cosmetic` thêm câu trung tính, kỳ vọng `same`; `semantic` thêm ngoại lệ đổi nghĩa,
+    kỳ vọng không `same`. `run_all.sh` chạy trên 8 shop dev, dùng lại replay dev, có bật judge.
+- **Lý do:**
+  - Model không tính số (CLAUDE.md luật 4). Nó chỉ xác nhận đáp án deterministic còn đúng nghĩa không. Mọi nghi ngờ
+    đều dẫn tới abstain.
+  - Một prompt cho mỗi dòng, để một dòng an toàn không che một dòng không an toàn trong cùng verdict.
+  - Mặc định tắt cho tới khi đo bằng suy luận thật.
+- **Hệ quả:**
+  - Câu luật thật sự đổi vẫn abstain; cần code-gen có rulebook trong context (bước 5 PLAN) mới trả lời được.
+  - Rủi ro chính là model nói `same` sai. False-pass đo bằng `judge_same` trên `semantic`, không đọc từ PA, vì gold
+    vẫn theo train. Chỉ bật trong image khi con số này gần 0.
+  - Kết quả CPU (backend giả, replay rỗng) chỉ kiểm đường đi, **không phải độ chính xác của LLM**.
+  - Đổi `IMPL` hoặc prompt judge thì replay judge cũ không dùng được (khoá theo prompt), phải chạy GPU lại.
+  - Không có chữ rulebook nào của split khác train trong source hay few-shot. Judge không có few-shot.
+
+### D18 — Đối chiếu rulebook theo dòng lúc chạy: tham số đọc lại, định nghĩa đổi thì abstain (2026-11-07)
+- **Bối cảnh:**
+  - D16 bước 3: phải dùng rulebook của đúng split. Bảng kê `docs/RULEBOOK_PARAMS.md` cho thấy mới đọc lúc chạy được
+    4 tham số. Khoảng 35 dòng định nghĩa (doanh thu, đơn hợp lệ, nợ, kho…) đặt cứng trong executor.
+  - Rulebook khác train mà executor vẫn tính theo train thì ra câu sai tự tin (−1). Public đã thêm ngành mới và luật
+    mới (EXPERIMENTS 04/11); private chắc chắn có rulebook riêng.
+- **Lựa chọn:** `datamate/rulebook.py` tách rulebook split thành dòng luật (mỗi dòng bảng là một dòng; phần văn xuôi
+  của mỗi mục là một dòng), so với chỉ mục sinh từ rulebook train (`rulebook_index.json`, chỉ có hash và mã `§m.k`,
+  không có chữ):
+  - Trùng hash nguyên văn đã chuẩn hoá → luật không đổi.
+  - Chỉ trùng **khuôn** (số và tên thứ thay bằng ký hiệu), dòng là tham số (ca, Tết, đầu tuần) → đọc giá trị mới.
+  - Khác, hoặc dòng train bị mất → **chặn phạm vi của dòng đó**: theo op, theo filter (ca, size, kê đơn…) hoặc theo
+    loại kỳ (`week`, `last_n`, `tet`…). Intent chạm phạm vi thì abstain, log ghi mã dòng.
+  - Dòng mới (khoá không có trong train) → các cụm từ của dòng không xuất hiện ở đâu trong rulebook train (khoá, chữ
+    in đậm) thành từ khoá. Câu hỏi chứa từ khoá thì abstain.
+  - Mục toàn cục (§0 mở đầu, §7 không trả lời được, §8 cách ghi file, §9 format, phần giới thiệu §6): đổi thì **chỉ
+    ghi log**, không chặn.
+- **Lý do:**
+  - Precision trước (D11, D16 mục 4): sai do lệch luật là lỗi tự tin, không gate nào khác bắt được.
+  - Chặn theo phạm vi hẹp (op/filter/loại kỳ) thay vì cả mục, để một dòng đổi không xoá cả hệ thống.
+  - Mục toàn cục chỉ ghi log vì chặn chúng nghĩa là abstain toàn bộ. Ingest có bất biến riêng (D11), format do code
+    `answer/` giữ.
+  - Suy hoàn toàn từ rulebook train và rulebook của split lúc chạy, không nhìn rulebook public.
+- **Hệ quả:**
+  - Đổi chữ vô hại (sửa chính tả) trong một dòng định nghĩa sẽ làm abstain thêm, không làm sai.
+  - Dòng mới định nghĩa lại bằng từ đã có trong train (không có cụm từ mới) thì không bắt được: ghi số dòng như vậy vào log.
+  - Đổi rulebook train (khi BTC cập nhật) phải chạy lại `analysis/build_rulebook_index.py`; test kiểm chỉ mục khớp.
+  - Sau này các câu bị chặn là ứng viên cho nhánh LLM/code-gen có rulebook trong context.
+
+### D17 — Pin vLLM 0.10.1.1 (base Docker Guide) và numpy 2.2.6 (2026-11-07)
+- **Bối cảnh:**
+  - D16 yêu cầu bản vLLM của máy GPU thành viên khớp base image `vllm/vllm-openai:v0.10.1.1`. Runbook cũ để
+    `pip install vllm` lấy bản mới nhất, hiện là 0.33.0. Image dựng từ bản đó có thể cần CUDA mới hơn driver máy chấm,
+    trong khi BTC chỉ cam kết CUDA ≥ 12.8.
+  - vllm 0.10.1.1 pin `torch==2.7.1` (cu128) và `numba==0.61.2`. numba bản này cần `numpy<2.3`, còn
+    `docker/requirements.txt` đang pin `numpy==2.4.6`: xung đột thật, cả trong image lẫn trên máy thành viên.
+- **Lựa chọn:**
+  - Extra `llm` pin `vllm==0.10.1.1`. Runbook cấm nâng cấp vLLM, torch, numpy.
+  - Hạ `numpy` về 2.2.6 cho cả `.venv` dev, `docker/requirements.txt` và image rule-only.
+- **Lý do:**
+  - Base được BTC thử trên 5090 giảm rủi ro phần cứng. Replay ghi trên đúng bản vLLM của image thì calibrate mới có
+    nghĩa (D14).
+  - Đo trên CPU: numpy 2.2.6 cho submission dev 2447/2447 và holdout 553/553 giống hệt từng byte, 155 test pass,
+    few-shot sha256 không đổi (`072b2861…`). pandas 3.1.0 nhận numpy ≥ 2.0.2.
+- **Hệ quả:**
+  - API ép JSON của bản này là `GuidedDecodingParams` (code đã có nhánh fallback). Smoke test ghi lại API đang dùng.
+  - Kernel FP8 cho 14B trên 5090 (sm120) ở 0.10.1.1 chưa được kiểm. Nếu lỗi thì dùng TP=2 BF16 (máy chấm có 2 card)
+    hoặc AWQ.
+  - Image vLLM dùng Python 3.12, `.venv` dev dùng 3.11. Phải so container với local như đã làm với bản rule-only.
+  - (09/11) Pin thêm `transformers==4.55.4`: cài vLLM 0.10.1.1 vào môi trường mới kéo transformers 5.x, bản này bỏ
+    `all_special_tokens_extended` nên vLLM chết lúc load tokenizer (gặp trên Kaggle). Khi build `Dockerfile.llm` phải so
+    bản transformers của base image với pin này. Kaggle kernel là Python 3.13: chạy trong venv 3.12 (`uv`).
+
+### D16 — Public là thước đo khả thi; đọc rulebook lúc chạy lên đầu; giữ GPU cho vòng private (2026-11-07)
+- **Bối cảnh:**
+  - Từ 04/11 chưa nộp public lần nào (D11: tối đa 1 lần mỗi milestone). Proxy synth đạt 0.985 nhưng public chỉ 0.076: proxy chỉ biến đổi shop dev, không có ngành mới hay luật mới, nên không đo được rủi ro chính.
+  - Đối chiếu portal ngày 07/11:
+    - Rule 6 cấm *"collect answers to test questions by any means"*.
+    - Mục Data yêu cầu agent dùng rulebook của đúng split đang trả lời, không dùng bản copy từ train.
+    - Vòng private: **đội tự chạy** bản đã đóng băng (20/11 09:00 → 23/11), điểm cuối là điểm BTC chạy lại.
+    - Image nộp bằng link Google Drive public kèm checksum.
+    - Rule 5: agent được kỳ vọng sinh và chạy code.
+- **Lựa chọn:**
+  1. **Public là thước đo khả thi chính, cùng với proxy.** Mỗi milestone nộp đúng **phiên bản hệ thống hoàn chỉnh**, tối đa khoảng 2 lượt mỗi ngày, chọn loại model "<=15B", ghi vào `EXPERIMENTS.md`. Thay phần giới hạn tần suất của D11. Phần còn lại của D11 giữ nguyên: không sửa theo từng shop, không đọc câu hỏi hay giá trị ô.
+  2. **Không thiết kế bài nộp để dò nhãn:** không nộp hai bản chỉ khác nhau ở một nhóm câu nhỏ (ví dụ tắt bất biến trên 2 shop), không chọn op hay shop theo điểm public. Theo Rule 6, những việc đó gần với thu thập đáp án.
+  3. **Đọc rulebook lúc chạy đứng ngang LLM, làm trước phần calibrate LLM.** Tham số luật (ca, đầu tuần, Tết, định nghĩa) đọc từ `/data/rulebook.md`, mặc định lấy từ train khi không đọc được. Kiểm thử bằng rulebook tổng hợp tự đổi tham số trên shop dev. **Không xem rulebook public để định hướng code** (SPEC §7.1).
+  4. **Mục tiêu precision public ước tính ≥ 90%** trước khi mở rộng độ phủ. Bản nộp nào làm precision giảm thì không nhận.
+  5. **Hậu cần vòng private:**
+     - Giữ GPU cho 20–23/11.
+     - Chạy thử toàn bộ quy trình chạy private trước 16/11.
+     - Chuẩn bị link Drive public cho image kèm checksum.
+     - README bài nộp có khai báo model.
+- **Lý do:**
+  - Public cùng format với private và có ngành, luật lạ, nên là tín hiệu tốt nhất hiện có. Portal ghi rõ điểm public để tham khảo trong lúc phát triển.
+  - Đọc rulebook là yêu cầu của đề. Private chắc chắn có rulebook riêng, và tham số đặt cứng từ train là nghi phạm hàng đầu của các câu sai trên public.
+  - Thiếu GPU trong 20–23/11 thì không có submission private, và không được BTC chạy lại.
+- **Hệ quả:**
+  - Ngay bây giờ: nộp baseline v0.6 rule-only.
+  - Thêm mốc go/no-go 11/11 theo PA public (ngưỡng chốt sau khi có baseline).
+  - Ngân sách khoảng 40 giây/câu (500 câu trong 6 giờ) đủ cho agent nhiều bước hoặc code-gen. Code-gen chỉ làm khi đọc rulebook và LLM parser đã xong.
+  - Docker Guide khuyến nghị base `vllm/vllm-openai:v0.10.1.1`. Bản vLLM pin từ máy GPU thành viên (D15) phải khớp base này, hoặc chứng minh chạy được trên 5090.
+
+### D15 — Chạy GPU trên máy thành viên, dữ liệu thi đi qua Drive, repo chỉ nhận code và số liệu (2026-11-07)
+- **Bối cảnh:** máy lead không có GPU. Một thành viên có GPU NVIDIA. Repo GitHub public. Rà soát cho thấy ngoài
+  `data/` còn nhiều đường lộ khác: few-shot (nguyên văn câu train), replay LLM (đầu ra model có mention chép từ câu hỏi
+  train/holdout/public), submission và log public, ghi chú QA tính tay. `tests/` đã có 5 câu chép nguyên văn từ train.
+  Portal Zalo (public submission) bắt chọn loại model: API bên thứ ba, open-source > 15B, small ≤ 15B.
+- **Lựa chọn:**
+  - Thành viên chạy theo `docs/GPU_RUNBOOK.md` bằng một lệnh (`scripts/gpu/run_all.sh`): smoke test
+    (`eval/gpu_smoke.py`, câu tự viết) rồi dev, holdout, public cho Qwen3-8B và 14B, ghi replay. Chế độ ghi
+    `DATAMATE_LLM_CALL_ALL=1` gọi model trên mọi câu (`config.LLMConfig.call_all`), quyết định ensemble không đổi.
+    Lead calibrate và chọn model trên CPU từ replay (D14). Tham số GPU qua env (`DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}`),
+    không nằm trong khoá replay.
+  - Kênh trả kết quả: bundle (replay, submission, log) lên **Drive nhóm**. GitHub chỉ nhận `summary.md` (phiên bản,
+    thời gian, VRAM, bảng PA) qua PR vào `docs/gpu_runs/`.
+  - Chặn nhiều lớp: `.gitignore` bỏ mọi `*.jsonl`, `*.tgz`; pre-commit và CI chặn `data/`, archive, mọi `.jsonl`;
+    hook `eval/check_leak.py` so mọi file text với toàn bộ câu hỏi thi (chỉ in tên file và số lượng, không in câu;
+    không có data thì bỏ qua). Viết lại 5 câu test trùng train, test vẫn pass.
+  - Mọi lần nộp public chọn **"Based on small models (<=15B)"**, kể cả bản rule-only (không dùng model nào), vì chỉ
+    hạng mục SLM được xếp hạng (D02).
+- **Lý do:**
+  - Thành viên không cần hiểu hệ thống: một lệnh, đầu ra cố định, lỗi chỉ cần gửi traceback.
+  - GPU dùng một lần cho mỗi model và prompt. Mọi vòng lặp sau đó chạy trên CPU.
+  - Ghi trên mọi câu thì một lần chạy đủ để thử cả `rescue_gate`, `require_agreement` và `llm_only`.
+  - Kiểm tra tự động bắt được cả các đường lộ không phải file data (câu chép trong test, docs).
+- **Hệ quả:**
+  - Few-shot phải giống hệt giữa hai máy: runbook kiểm sha256. Đổi few-shot hoặc prompt thì phải chạy GPU lại.
+  - Máy chấm là 2× RTX 5090 32 GB (SPEC): image cuối chạy 14B BF16 với TP=2. Replay ghi bằng TP=1 hoặc bản AWQ/FP8 có
+    thể lệch vài token so với image, nên calibrate ensemble theo thống kê, không kỳ vọng image khớp replay từng câu.
+    Trước khi nộp phải đo lại PA dev bằng chính image đó.
+  - Backend vLLM nuốt lỗi để không làm sập run, nên `LLMParser` đếm `llm_calls/llm_failed`. Summary GPU in số này và
+    cảnh báo khi > 0.
+  - Lịch sử git vẫn còn 5 câu train cũ trong test. Không rewrite history (câu ngắn, chung chung, không kèm đáp án).
+    Nếu BTC yêu cầu thì xử lý sau.
+  - Ghi chú QA tính tay (`docs/qa/`, WORKFLOW §3) không được chép câu hỏi hay đáp án: chỉ ghi id và luật áp dụng.
+    File paraphrase của TV3 phải là câu tự viết và qua `check_leak`, hoặc để trên Drive.
+  - Proxy `eval/synth` dùng lại câu dev nên replay dev dùng được cho synth trên CPU. Cần thêm cờ `--llm` vào
+    `eval/synth/run.py` (việc CPU của lead).
+  - 14B BF16 (~29.5 GB weights) **không vừa một RTX 5090 32 GB** với `gpu_memory_utilization=0.85`. Image cuối dùng
+    `tensor_parallel_size=2` trên 2 card của BTC, hoặc bản FP8. Sửa lại ARCHITECTURE §6 khi chốt model.
+
+### D14 — LLM parser: model chỉ chọn op + mention, ensemble mặc định chỉ "cứu" câu bị gate chặn (2026-11-07)
+- **Bối cảnh:** chưa có GPU (máy dev không có NVIDIA, chưa tải model). Phase LLM (PLAN 08–10/11) cần phần lớn code chạy và test được trên CPU, để khi có GPU chỉ còn chạy model và calibrate. Public cho thấy gate từ lạ (D10) bỏ ~368 câu gần như không phân biệt đúng/sai.
+- **Lựa chọn:**
+  - Contract (`parse/llm_schema.py`): model trả JSON `{op, filters, args}` theo JSON schema (guided decoding). `op` thuộc đúng tập handler của executor, thêm `none` = không op nào khớp. **Model không ghi thời gian**: kỳ lấy từ `timeparse` giống rule parser. Filter thực thể (`product, customer, category, ingredient, staff`) là mention chép từ câu hỏi, link bằng chính `Dictionary` của rule parser; không link được đúng 1 mã thì thành `?…` và executor abstain. Arg ngoài contract của op bị bỏ qua.
+  - So khớp bằng `signature()` (op, kiểu đáp án, kỳ, filter đã link, arg của contract, điền mặc định của executor).
+  - Backend thay được (`parse/llm.py`): `VLLMBackend` (offline, guided JSON, temp 0 khi n=1, seed cố định, prefix caching), `ReplayBackend` ghi/đọc jsonl theo hash(model, prompt, n, temp, seed). Ghi output trên máy GPU một lần, sau đó calibrate chính sách ensemble trên CPU.
+  - Ensemble (`parse/ensemble.py`, cờ trong `config.LLMConfig`). Mặc định: (a) rule qua gate → trả lời như cũ, không gọi model; (b) rule bị gate chặn → trả lời khi **mọi** mẫu LLM cùng signature với rule; (c) rule không parse được → abstain (`llm_only` tắt). `require_agreement` (abstain khi rule qua gate mà LLM khác) và `llm_only` (k/k phiếu) để bật sau khi đo.
+  - Few-shot chỉ lấy từ câu dev mà pipeline trả lời đúng (`analysis/build_fewshot.py`), 2 câu/op, ưu tiên khác shop. Prompt = hướng dẫn + bảng op + few-shot (tĩnh) + câu hỏi gốc có dấu.
+  - Log: `thinking` = list output thô của model (D12), `inputs.source` = rule | rule+llm | llm.
+- **Lý do:**
+  - Giữ D04: model không ra số, không ra ngày, không ra mã. Sai của model chỉ có thể là chọn sai op hoặc arg, và đều bị kiểm bằng rule parser.
+  - Mặc định (b) không làm mất câu nào đang đúng, chỉ có thể thêm câu. Rủi ro duy nhất là rule và LLM cùng sai giống nhau trên câu lạ.
+  - Replay giúp tách tiền GPU khỏi vòng lặp calibrate.
+- **Hệ quả:**
+  - Backend `off` (mặc định) cho kết quả y hệt bản rule-only.
+  - `llm_only` cần nhiều mẫu (n_samples ≥ 3, temp > 0), tốn thời gian hơn. Đo trên holdout/proxy trước khi bật.
+  - Chưa chốt model (việc riêng, cần GPU): ứng viên dòng Qwen3 8B/14B (ARCHITECTURE §6).
+  - `parse/fewshot.jsonl` chứa nguyên văn câu hỏi train nên bị gitignore (D13). Mỗi máy và mỗi lần build image phải sinh lại bằng `analysis/build_fewshot.py`. Thiếu file thì prompt không có ví dụ.
+
 ### D13 — Quy trình nhóm: pre-commit + GitHub Actions CI + ruleset cho main (2026-11-06)
 - **Bối cảnh:** sắp có thêm 2 thành viên clone repo và mở PR. Image nộp bài build từ `main`, nên `main` hỏng là mất lượt nộp. Repo để public. Dữ liệu thi không được đưa lên GitHub.
 - **Lựa chọn:**
@@ -31,7 +376,7 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   - `elapsed_ms` của câu đầu mỗi shop gồm cả thời gian ingest.
   - Image LLM sẽ đổi base sang CUDA ≥ 12.8 + vLLM, giữ nguyên layout `/code`.
 
-### D11 — Giới hạn dùng public; ingest tự kiểm tra, không chạy theo lỗi từng shop public (2026-11-05)
+### D11 — Giới hạn dùng public; ingest tự kiểm tra, không chạy theo lỗi từng shop public (2026-11-05) — mục 3 (tần suất nộp) Superseded by D16; quyền xem cấu trúc public ở mục 1 Superseded by D23
 - **Bối cảnh:** sau public v0.4 vẫn còn 107 câu abstain do không nhận ra bảng đơn (2 shop). Proxy synth đã sạch (6 transform đều 24/24) nhưng không tái hiện được kiểu dữ liệu của 2 shop này. BTC xác nhận được xem cấu trúc dữ liệu public để cải thiện bộ đọc (`SPEC.md` §7 câu 4). Rủi ro còn lại là overfit: sửa cho đúng 14 shop public trong khi private là shop mới. Các câu abstain đó vẫn an toàn (được 0 điểm). Mối nguy thật là câu ingest đọc sai mà vẫn trả lời (bị −1).
 - **Lựa chọn:**
   1. Không tối ưu theo từng lỗi public. Được xem cấu trúc public (tên file, sheet, header, README), nhưng chỉ để rút ra **kiểu dữ liệu**, không phải bản sửa cho một shop. Không đọc giá trị ô hay câu hỏi để viết luật (luật 1 vẫn giữ). Ghi lại mỗi lần xem: shop nào, xem gì.

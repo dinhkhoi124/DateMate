@@ -1,0 +1,74 @@
+# LLM image: code-gen agent (D20/D21/D22). Same /code layout and predict.sh as the rule-only image.
+# Base = Docker Guide recommendation (D17): vLLM 0.10.1.1, torch 2.7.1 + CUDA 12.8, Python 3.12, supports RTX 5090.
+#
+# Build (repo root, BuildKit). Weights come from a separate named context, so the main context stays small and
+# .dockerignore (which excludes models/) is unchanged; the weights dir NAME is part of the replay key (D15), keep it:
+#   docker build --platform linux/amd64 -f docker/Dockerfile.llm \
+#       --build-context weights=models/Qwen3-14B-AWQ --build-arg MODEL=Qwen3-14B-AWQ \
+#       -t zaic2026_datamate_<team>:final .
+# Dependency check without weights (CPU machine): --build-context weights=docker/no_weights --build-arg MODEL=none
+# Organisers' command: docker run --rm --gpus '"device=0,1"' --network none --shm-size=16g --entrypoint bash \
+#                          -v <split>:/data:ro -v <out>:/result <tag> /code/predict.sh
+FROM vllm/vllm-openai:v0.10.1.1
+
+# D22: the model every agent number was measured with (Kaggle v3, AWQ 4-bit, fp16 activations)
+ARG MODEL=Qwen3-14B-AWQ
+
+# - temp files only under /tmp (SPEC §7 câu 2): vLLM / torch.compile / triton caches
+# - 2x RTX 5090 (SPEC): tensor parallel over both cards; consumer cards may lack P2P (Docker Guide)
+# - agent config fixed in the image (organisers change nothing): code-gen agent on (D20); k/m/policy are the committed
+#   AgentConfig defaults (D21), not set here. With the agent on, the rule side is pure rule (no D14 parser/judge)
+# - prompt ~10-12k tokens -> max_model_len 20480; prefix caching on (rulebook+README+schema shared per shop)
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONHASHSEED=0 \
+    HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1 \
+    PYTHONPATH=/code/src DATAMATE_CACHE=/tmp/datamate_cache \
+    XDG_CACHE_HOME=/tmp/.cache VLLM_CACHE_ROOT=/tmp/vllm_cache TRITON_CACHE_DIR=/tmp/triton_cache \
+    TORCHINDUCTOR_CACHE_DIR=/tmp/inductor_cache \
+    NCCL_P2P_DISABLE=1 \
+    DATAMATE_LLM=vllm DATAMATE_LLM_MODEL=/code/models/${MODEL} DATAMATE_LLM_TP=2 DATAMATE_LLM_DTYPE=float16 \
+    DATAMATE_LLM_MAX_LEN=20480 DATAMATE_LLM_GPU_UTIL=0.90 DATAMATE_LLM_THINKING=0 DATAMATE_LLM_RULE_JUDGE=0 \
+    DATAMATE_AGENT=codegen
+
+WORKDIR /code
+
+# Our pins (docker/requirements.txt, numpy 2.2.6 per D17) without touching what vLLM ships: torch, vllm, xgrammar,
+# transformers, numba and their numpy stay as in the base image (constraints from its own freeze).
+COPY docker/requirements.txt /code/requirements.txt
+RUN python3 -m pip freeze | grep -iE '^(torch|torchvision|torchaudio|vllm|xgrammar|transformers|numba|triton)==' \
+        > /tmp/base_constraints.txt \
+ && python3 -m pip install --no-cache-dir -r /code/requirements.txt -c /tmp/base_constraints.txt \
+ && python3 -c "import vllm, numpy, pandas; assert vllm.__version__ == '0.10.1.1', vllm.__version__; \
+print('vllm', vllm.__version__, 'numpy', numpy.__version__, 'pandas', pandas.__version__)"
+
+# Weights (named build context 'weights'): /code/models/<MODEL>/
+COPY --from=weights . /code/models/${MODEL}/
+
+# Inference code
+COPY src /code/src
+COPY docker/predict.sh /code/predict.sh
+COPY docker/README.md /code/README.md
+
+# /code/training_code/: train code, train data, logs, data_manifest.json (SHA-256)
+COPY pyproject.toml CLAUDE.md /code/training_code/
+COPY src /code/training_code/src
+COPY analysis /code/training_code/analysis
+COPY eval/scorer.py eval/submit_check.py eval/run_eval.py eval/splits.json eval/gpu_smoke.py eval/__init__.py \
+     eval/calibrate_agent.py eval/reexec_agent.py eval/resubmit_agent.py /code/training_code/eval/
+COPY eval/synth /code/training_code/eval/synth
+COPY scripts /code/training_code/scripts
+COPY tests /code/training_code/tests
+COPY docs /code/training_code/docs
+COPY docker /code/training_code/docker
+COPY data/train/train /code/training_code/data/train/train
+
+RUN sed -i 's/\r$//' /code/predict.sh && chmod +x /code/predict.sh \
+ && test -f /code/src/datamate/rulebook_index.json \
+ && python3 -c "from datamate.config import AgentConfig, LLMConfig; import datamate.agent.agent, datamate.agent.sandbox; \
+a, l = AgentConfig.from_env(), LLMConfig.from_env(); assert a.enabled and l.backend == 'vllm' and l.max_model_len >= 16384; \
+print('agent', a); print('llm', l.model_path, l.dtype, 'tp', l.tensor_parallel_size, 'len', l.max_model_len)" \
+ && { [ "${MODEL}" = "none" ] || test -f "/code/models/${MODEL}/config.json"; } \
+ && python3 /code/training_code/docker/make_manifest.py /code/training_code /code/training_code/data_manifest.json
+
+# Guide: organisers run with --entrypoint bash, so the image must not rely on its own entrypoint
+ENTRYPOINT []
+CMD ["bash", "/code/predict.sh"]

@@ -96,3 +96,25 @@ Trả `unanswerable` khi capability thiếu, kỳ hỏi nằm hoàn toàn ngoài
   - Ghi từng dòng và gọi `flush()`.
   - Câu nào lỗi hoặc quá thời gian thì ghi `abstain`.
 - Deterministic: cố định phiên bản thư viện, sắp xếp ổn định, không phụ thuộc thứ tự hash.
+
+## 8. Agent v2: sinh code là đường chính (D20, 09/11)
+
+```
+câu hỏi + as_of_date + business_id
+  │
+  ├─ [ingest] Store của shop (giữ nguyên tầng 0)
+  ├─ [context] rulebook của split (nguyên văn, đọc lúc chạy; prefix cache)
+  │            + README shop + schema bảng (cột, kiểu, vài dòng mẫu)
+  │            + mô tả API helper
+  ├─ [LLM ≤15B] sinh `def solve(T, H):` (pandas) → trả {"type", "answer"}
+  ├─ [sandbox] chạy trong process riêng, timeout, chỉ đọc bảng; lỗi → mẫu đó bỏ
+  ├─ [vote] k mẫu; trả lời khi ≥ m mẫu cùng đáp án đã chuẩn hoá §9, ngược lại abstain
+  ├─ [rule] đường nhanh: rule parser + executor khi dòng luật liên quan không đổi (D18) và qua gate
+  │         rule ≠ code-gen → abstain (chính sách calibrate)
+  └─ [log] thinking (output thô của model, list theo mẫu), code, output (bắt buộc theo Docker Guide)
+```
+
+- **Helper `H`** (code deterministic, test sẵn): `H.period(text)` → (start, end) theo `timeparse` + `calendar.csv`;
+  `H.link(kind, mention)` → mã/tên trong catalog; `H.money/H.pct` làm tròn §9; `H.as_of`.
+- **Bảng `T`**: DataFrame của Store chuẩn (orders, order_lines, products…) kèm bảng thô theo file khi Store thiếu cột.
+- Model không tự ra số: mọi con số là kết quả chạy code (CLAUDE.md luật 4).
