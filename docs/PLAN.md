@@ -40,8 +40,8 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 - [ ] Full dev + holdout + rulebook tổng hợp (cosmetic/semantic), calibrate k/m và chính sách rule × code-gen. Precision ≥ 90%
    - [ ] Holdout agent (chỉ số tổng) để xác nhận m=2 (D21 hệ quả): một lượt Kaggle riêng
 - [ ] Nộp public jsonl v2: gộp 3 shard bằng `resubmit_agent.py` (luồng chính thức, `--reexec`), `/submit-check`, nộp một bản, ghi bảng "Nộp public". Không phân tích log public (D23)
-- [ ] Test Solution #1 (rule-only) dùng lượt hôm nay: còn 6 lượt đến 15/11
-   - [x] Build lại từ `3c5848c` (đã gỡ `aef6e9e`, `--no-cache`: layer pip cũ hỏng khi ổ E: đầy → numpy segfault). Container trên train = local 3000/3000 (2895/10/95, 397s), submit_check PASS. Tar 308MB, MD5 `8cf7dec3b6e6383a339921657ab68d8a` (thay `31440b7c…`). Còn: upload Drive + nộp form
+- [x] Test Solution #1 (rule-only): **Test passed** (MD5 `8cf7dec3…`, xong 22:46 10/11, chạy 11 phút). Chưa bấm submit (để dành cho final 16/11)
+   - [x] Build lại từ `3c5848c` (đã gỡ `aef6e9e`, `--no-cache`: layer pip cũ hỏng khi ổ E: đầy → numpy segfault). Container trên train = local 3000/3000 (2895/10/95, 397s), submit_check PASS. Tar 308MB, MD5 `8cf7dec3b6e6383a339921657ab68d8a` (thay `31440b7c…`). Đã upload Drive + test
 - [x] D23: gỡ `aef6e9e` (từ vựng trạng thái); dev/holdout/agent không đổi
 
 **12/11**
