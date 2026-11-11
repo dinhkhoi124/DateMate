@@ -215,6 +215,9 @@ def _mk(y, mo, d, h=0, mi=0, s=0) -> datetime | None:
 
 # ---------------------------------------------------------------- categorical
 DONE, CANCELLED, RETURNED, SHIPPING = "done", "cancelled", "returned", "shipping"
+# a status value that is written but neither our vocabulary nor the shop README explains: NOT a valid order
+# (facts: valid = done | shipping), so unknown orders never silently count as sales (CLAUDE.md rule 5)
+UNKNOWN = "unknown"
 
 # matched on fold()ed text; order matters (first hit wins)
 _STATUS_RULES = [

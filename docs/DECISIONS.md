@@ -4,6 +4,33 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D25 — Trạng thái ba mức (hợp lệ / không hợp lệ / chưa biết) và đọc chú giải trạng thái trong README (2026-11-11)
+- **Bối cảnh:** ingest trên benchmark E0 (D24): `status_codes` và `status_newword` hỏng 24/24 shop. Giá trị trạng thái
+  không có trong từ vựng bị coi là `done` (đơn hợp lệ), nên đơn huỷ/trả bị tính vào doanh thu. Agent nhận đúng bảng đó.
+  Không shop dev nào có trạng thái lạ, nên train không lộ lỗi này.
+- **Lựa chọn:**
+  1. `ingest/readme.py::status_legend`: đọc câu README giải thích giá trị trạng thái: giá trị trong ngoặc kèm từ nối
+     (`'X' nghĩa là / là / tức là / = …`), và chú giải mã (`1 = …`, `A: …`, `0 -> …`) trên dòng nói về cột trạng
+     thái. Một cặp chỉ được nhận khi nhãn là từ trạng thái **đã có** trong từ vựng (`values.parse_status`). Giá trị
+     bị giải thích hai nghĩa thì bỏ. **Không thêm từ vựng mới** (bài học D23).
+  2. `Store._status_of`: chú giải README trước, từ vựng sau. Giá trị trạng thái **có ghi nhưng không hiểu** →
+     `UNKNOWN` (mới). `facts.valid = done | shipping`, nên `unknown` không bao giờ tính là đơn hợp lệ. Ô trống vẫn là
+     `done` như cũ. Cảnh báo `unrecognized status` và check D11 `status_unrecognized` giữ nguyên.
+- **Lý do:** CLAUDE.md luật 3 (suy ra từ README) và luật 5 (không chắc thì không đoán). Thà mất một số câu (abstain)
+  còn hơn cộng đơn huỷ vào doanh thu.
+- **Hệ quả:**
+  - Synthetic: `status_newword` 0 → 100% (A, B); `status_codes` 0 → 10/16 (A), 5/8 (B). Phần còn lại do generator
+    viết chú giải mâu thuẫn (BENCHMARK §7).
+  - Dev 2410/0/37 và holdout 485/10/58 không đổi; README dev không sinh cặp chú giải nào. 210 test pass, gồm test với
+    cách diễn đạt **khác** câu chữ của generator.
+  - Image rule-only (Test Solution #1, `3c5848c`) không có thay đổi này. Đưa vào image LLM hay không do PM quyết.
+  - Benchmark được niêm phong bằng hash nội dung (BENCHMARK §3), để thay đổi ingest này không mở băng D24.
+  - Phía agent: `status = 'unknown'` hiện trong `T`; xử lý trong prompt cần GPU, chưa làm.
+  - Câu chữ chú giải của generator giống nhau ở A và B, nên kết quả ingest B cho hai family này **không** phải bằng
+    chứng độc lập. Bằng chứng tổng quát là test với cách diễn đạt khác.
+
+---
+
 ### D24 — Benchmark tổng quát hoá agent trên shop tổng hợp (E0), đóng băng (2026-11-11)
 - **Bối cảnh:** code-gen một mình dev 0.653 → holdout 0.444 → public ước precision ~60% (v2 0.117). Dev chỉ 72 câu
   (SE PA ~0.08). Không được dùng public (D23) hay tuning trên holdout. Cần một thước đo shop lạ đủ lớn, có nhãn, để

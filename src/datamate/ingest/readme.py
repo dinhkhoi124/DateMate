@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from datamate.ingest.values import parse_date
+from datamate.ingest.values import fold, parse_date, parse_status
 
 _H2 = re.compile(r"^##\s+(.+?)\s*$", re.M)
 _FILE = re.compile(r"^-\s+`(.+?)`(?:\s*\((\w+)\))?", re.M)
@@ -47,6 +47,7 @@ class ReadmeSpec:
     data_start: date | None = None
     data_end: date | None = None
     unit_conversions: list[tuple[str, str, float, str]] = field(default_factory=list)  # (product, big, factor, base)
+    status_map: dict[str, str] = field(default_factory=dict)   # fold(raw status value) -> done/cancelled/... (README)
     raw: str = ""
 
     def columns_for(self, file_or_table: str) -> list[ColumnSpec]:
@@ -89,12 +90,42 @@ def parse_readme(path: Path | str) -> ReadmeSpec:
         spec.data_end = parse_date(m.group(1))
     if m := _DATA_START.search(blob):
         spec.data_start = parse_date(m.group(1))
+    spec.status_map = status_legend(text)
     for prod, big, fac, base in _UNIT_CONV.findall(blob):
         try:
             spec.unit_conversions.append((prod.strip(), big.strip(), float(fac.replace(",", ".")), base.strip()))
         except ValueError:
             pass
     return spec
+
+
+# README explanations of status values (rulebook §8 statuses; the shop's own words are only read, never listed here):
+#   quoted value + connector:  'Bom hàng' nghĩa là đơn đã huỷ  |  "X" là đơn trả  |  “X” = huỷ
+#   code legend on a line about the status column:  1 = Hoàn thành, 2 = Đã huỷ  |  TT01: xong; TT02: huỷ
+_Q = "\"'“”‘’`"
+_QUOTED = re.compile(rf"[{_Q}]([^{_Q}\n]{{1,40}})[{_Q}]\s*(?:\(.{{0,30}}?\)\s*)?"
+                     r"(?:có nghĩa là|nghĩa là|tức là|được hiểu là|hiểu là|là|=|:|→|->)\s*([^.;,\n()]{2,60})", re.I)
+_CODE = re.compile(r"(?<![\w])([A-Za-z0-9_\-]{1,10})\s*(?:=|:|→|->)\s*([^,;.\n()=]{2,40})")
+_STATUS_LINE = re.compile(r"trang thai|tinh trang|status|ket qua|xu ly")
+
+
+def status_legend(text: str) -> dict[str, str]:
+    """{fold(raw value): status} from README sentences that explain status values. A pair counts only when its label
+    is a known status word (values.parse_status) and the value itself is not already one; a value given two different
+    meanings is dropped (CLAUDE.md rule 5: unsure -> no mapping, the status stays 'unknown')."""
+    pairs: dict[str, set] = {}
+
+    def add(key: str, label: str):
+        st, k = parse_status(label), fold(key.strip())
+        if st and k and parse_status(key) is None:
+            pairs.setdefault(k, set()).add(st)
+    for line in text.splitlines():
+        for k, lab in _QUOTED.findall(line):
+            add(k, lab)
+        if _STATUS_LINE.search(fold(line)):
+            for k, lab in _CODE.findall(line):
+                add(k, lab)
+    return {k: next(iter(v)) for k, v in sorted(pairs.items()) if len(v) == 1}
 
 
 def _parse_sqlite_section(title: str, body: str, spec: ReadmeSpec):

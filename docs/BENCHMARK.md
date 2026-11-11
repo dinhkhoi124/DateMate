@@ -1,8 +1,9 @@
 # BENCHMARK — Agent Generalization trên shop tổng hợp (E0, D24)
 
-> **Trạng thái 11/11: ĐÃ ĐÓNG BĂNG (D24).** `bench_cells.json`: 534 cell, `gen_hash 0d52d01775c9d7ec`. Đã chạy
-> `ingest` (§7). **Chưa chạy agent trên benchmark (E2).** Trên máy mới: `bench.py materialize` (khoảng 40 phút với
-> `--jobs 2`; chạy lại sau gián đoạn sẽ bỏ qua shop đã xong), rồi `run`/`score`.
+> **Trạng thái 11/11: ĐÃ ĐÓNG BĂNG và NIÊM PHONG (D24).** `bench_cells.json`: 534 cell, `gen_hash 0d52d01775c9d7ec`,
+> 205 hash nội dung biến thể + 4 hash rulebook biến thể. Đã kiểm tái lập: sinh lại cả 24 shop từ đầu, 0/205 khác.
+> Đã đo ingest trước/sau sửa trạng thái (§7, D25). **Chưa chạy agent trên benchmark (E2).** Trên máy mới:
+> `bench.py materialize --jobs 2` (khoảng 40–48 phút; chạy lại sau gián đoạn sẽ bỏ qua shop đã xong), rồi `run`/`score`.
 
 Mục đích: đo agent code-gen trên shop có schema lạ **mà không dùng public** (D23) và **không tuning trên holdout**.
 Code: `eval/synth/families.py` (biến đổi), `eval/synth/bench.py` (build / materialize / ingest / run / score).
@@ -55,16 +56,24 @@ Chọn câu theo từng shop (seed cố định):
   rulebook bị đổi. Bản sửa học thuộc từ điển của A sẽ không có lợi trên B.
 - **Quyền xem:** A được đọc trace và từng câu sai (`score --errors`). B chỉ có số tổng (`--errors` không in B), giống
   luật holdout. Holdout không tạo biến thể và chỉ dùng cho regression khi chốt (E6). Public không dùng (D23).
-- **Đóng băng:** `gen_hash` gồm code sinh biến thể, `splits_gen.json` và reader/readme của ingest. `run` từ chối chạy
-  khi hash đổi. `build` từ chối ghi đè `bench_cells.json`; `build --rebuild` chỉ dùng kèm một mục DECISIONS mới.
-  `materialize` dựng lại biến thể (ví dụ trên Kaggle) và kiểm từng biến thể bằng fingerprint Store đã đóng băng.
+- **Đóng băng = cell + nội dung (niêm phong).** Danh tính của benchmark là `bench_cells.json` (cell, nhãn) cộng
+  `content_fp`: hash **nội dung file** của từng biến thể (csv/md: bytes; xlsx: mọi phần trong zip trừ `docProps/`,
+  với openpyxl 3.1.5 đã pin) và `rulebook_sha1`. Hash này **không phụ thuộc code ingest**, nên ingest/rule được phép
+  cải tiến mà benchmark vẫn giữ nguyên. `materialize` sinh lại biến thể và so `content_fp`; `run` kiểm nội dung các
+  shop nó dùng trước khi chạy; `ingest --verify` kiểm toàn bộ. `build` từ chối ghi đè `bench_cells.json`;
+  `build --rebuild` chỉ dùng kèm một mục DECISIONS mới.
+- `gen_hash` (code sinh + reader/readme lúc build) vẫn được ghi để tra cứu. Sau khi niêm phong, gen_hash khác chỉ in
+  cảnh báo. Lần niêm phong 11/11 làm sau một thay đổi ingest (D25, `readme.py`); trước khi niêm phong đã kiểm
+  `families.py`, `make.py`, `splits_gen.json` và các hàm sinh trong `bench.py` không đổi so với commit đóng băng
+  `eaead07`, và không file biến thể nào bị sửa sau lúc build.
+- `variant_fp` (fingerprint Store lúc build) chỉ còn giá trị lịch sử: nó thay đổi theo code ingest.
 - **Giới hạn đã biết:** 24 shop dev đã được dùng để phát triển ingest/rule trước E0, nên B **không** phải shop lạ thật.
   B chỉ bảo vệ việc tuning từ E0 trở đi, và các biến đổi của B chưa từng được nhìn thấy.
 - **Kiểm leakage lúc đóng băng (11/11):** không shop nào có cell ở cả A và B; không có shop holdout; thư mục biến thể
   `out/bench/A/*` chỉ chứa shop A, `out/bench/B/*` chỉ chứa shop B; mọi khoá fingerprint đúng side.
 - **Chạy lại an toàn:** mỗi (side, shop) có stamp `out/bench/.stamps/` chỉ ghi sau khi **mọi** biến thể của shop đã
-  nằm trên disk. Lần chạy sau bỏ qua shop có stamp khớp (cùng generator, seed, drop_kind), shop dở dang thì làm lại
-  từ đầu. `rule_pass.json`, fingerprint và `bench_cells.json` được ghi kiểu ghi-tạm-rồi-đổi-tên. `rule_pass.json`
+  nằm trên disk. Lần chạy sau bỏ qua shop có stamp khớp (cùng code **sinh**: families/make/`_gen_shop`, seed,
+  drop_kind; không phụ thuộc code ingest), shop dở dang thì làm lại từ đầu. `rule_pass.json`, fingerprint và `bench_cells.json` được ghi kiểu ghi-tạm-rồi-đổi-tên. `rule_pass.json`
   tự dùng lại khi code `src/datamate` không đổi.
 
 ### 3a. Số shop độc lập và số cell (bản đóng băng)
@@ -145,19 +154,48 @@ PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py score eval/runs/<A> eval
 Có thể chạy theo shard bằng `--side/--families/--shops`. `score` gộp nhiều thư mục run của cùng một arm.
 `build` và `materialize` mặc định `--jobs 3`. Máy 16 GB RAM nên dùng `--jobs 2` (`--jobs 3` từng bị dừng vì thiếu RAM).
 
-## 7. Kết quả ingest (E0, 11/11)
+## 7. Kết quả ingest trên synthetic (E0 và sau D25, 11/11)
 
-`bench.py ingest`: Store của biến thể so với bản gốc, đếm số shop khớp hoàn toàn và % trường fingerprint khớp. Số
-shop ở đây là mọi shop của side áp dụng được family, nhiều hơn số shop có cell ở §3a.
+`bench.py ingest`: Store của biến thể so với bản gốc, theo family: số shop khớp hoàn toàn (% trường fingerprint khớp).
+Số shop ở đây là mọi shop của side áp dụng được family, nhiều hơn số shop có cell ở §3a. Báo cáo sau D25:
+`eval/runs/20261111_204947_bench_ingest/report.json`.
 
-| Family | A: shop khớp hoàn toàn | B: shop khớp hoàn toàn | Ghi chú |
-|---|---|---|---|
-| `rename_cols` | 16/16 | 7/8 (95.8%) | |
-| `rename_tables` | 15/16 (98.8%) | 8/8 | 1 shop A mất bảng thanh toán và chi phí (tên file không còn khớp README) |
-| `layout` | 16/16 | **2/8 (78.0%)** | cột trống + header lặp (kiểu B) làm sai số dòng/đơn |
-| `values`, `nodoc`, `noise_table`, `split_months` | 100% | 100% | |
-| `status_codes` | **0/16 (74.3%)** | **0/8 (74.3%)** | không đọc chú giải mã trạng thái → đơn huỷ/trả thành hợp lệ |
-| `status_newword` | **0/16 (77.1%)** | **0/8 (77.1%)** | từ huỷ mới không được nhận → như trên |
+| Family | A trước | A **sau D25** | B trước | B **sau D25** |
+|---|---|---|---|---|
+| `status_newword` | 0/16 (77.1%) | **16/16 (100%)** | 0/8 (77.1%) | **8/8 (100%)** |
+| `status_codes` | 0/16 (74.3%) | **10/16 (90.4%)** | 0/8 (74.3%) | **5/8 (90.9%)** |
+| `layout` | 16/16 | 16/16 | 2/8 (78.0%) | 2/8 (78.5%) |
+| `rename_tables` | 15/16 (98.8%) | 15/16 | 8/8 | 8/8 |
+| `rename_cols` | 16/16 | 16/16 | 7/8 (95.8%) | 7/8 |
+| `values`, `nodoc`, `noise_table`, `split_months` | 100% | 100% | 100% | 100% |
+
+Dev (rule-only) 2410/0/37 và holdout (chỉ số tổng) 485/10/58: không đổi sau D25.
+
+**Giới hạn và nguyên nhân gốc còn lại** (chỉ phân tích shop **A**; B chỉ xem số tổng):
+
+- **`status_codes` 6/16 shop A (và 3/8 B) còn lệch: lỗi của generator, không phải của ingest.** Shop có nhiều sheet
+  hoặc nhiều file cùng có cột trạng thái (theo tháng, đơn + dòng đơn). `f_status_codes` đánh mã riêng cho từng sheet
+  nhưng ghi mọi chú giải vào **cùng một** dòng README, nên README tự mâu thuẫn (cùng mã `1` lúc là "Đã hoàn hàng",
+  lúc là "Đã hoàn thành"). Không ai đọc được đúng dữ liệu đó. Ingest bỏ mã mâu thuẫn → trạng thái `unknown` → đơn
+  không được tính hợp lệ, và D11 `status_unrecognized` chặn rule. Với các cell này, hành vi đúng là **abstain**; nhãn
+  `same` khiến abstain được 0 điểm, trả lời sai bị −1. Đã đóng băng nên không sửa generator. Khi đọc E2, báo riêng
+  `status_codes` theo "ingest khớp / không khớp".
+- **`layout` B 6/8 shop: dòng header lặp không bị bỏ khi cột đầu tiên là cột trống.** `reader._apply_header` chỉ nhận
+  dòng header lặp khi **cột đầu tiên** của dòng bằng tên cột đầu tiên. Biến đổi B chèn một cột trống (tên `_colN`)
+  ở vị trí ngẫu nhiên; khi nó rơi vào vị trí 0 ở một sheet, mọi dòng header lặp của sheet đó thành dòng dữ liệu
+  (+1 đến +82 dòng/đơn, +1 "sản phẩm" là chính tên cột). **Đề xuất (chưa làm):** so cả dòng với header (ví dụ ≥ 60%
+  ô không trống trùng tên cột tương ứng) thay vì chỉ cột đầu. Thay đổi nhỏ trong `reader.py`, cần test + chạy lại dev,
+  holdout và ingest synthetic.
+- **`rename_tables` A 1/16 (biz_124): bảng chi phí bị đọc thành phiếu thu.** Sau khi đổi tên file thành `BangKe_xx`,
+  nhận diện loại bảng mất tín hiệu từ tên file (`ChiPhi`). Các cột (ngày, số tiền, ghi chú) giống phiếu thu nên bảng
+  bị gộp vào `payments`: chi phí 75 → 0, phiếu thu +75. Nguy hiểm vì làm sai cả câu nợ/thu tiền một cách tự tin.
+  **Đề xuất (chưa làm):** khi phân loại bảng, cho mô tả README của bảng/cột (ví dụ "chi phí", "khoản chi") trọng số
+  cao hơn tên file; nếu điểm hai loại gần nhau thì để `unknown` (bảng vào `extra`, caps báo thiếu → abstain) thay vì
+  gộp nhầm.
+- **`rename_cols` B 1/8:** mất vai trò cột trạng thái khi tên cột bị đổi kiểu tự chế (số đơn huỷ về 0). Đây là shop
+  B nên không mở chi tiết. Hướng xử lý gần với `rename_tables`: dùng mô tả README khi tên cột không khớp từ vựng.
 
 Lỗi ingest truyền thẳng sang agent, vì agent dùng `T` dựng từ ingest (ARCHITECTURE §8). Khi đọc kết quả agent ở E2,
-tách cell theo "ingest khớp / không khớp" trước khi quy lỗi cho code-gen.
+tách cell theo "ingest khớp / không khớp" trước khi quy lỗi cho code-gen. Trạng thái `unknown` hiện trong `T`
+(`status` = 'unknown'): agent lọc `status == 'done'` sẽ loại nó, còn lọc `status != 'cancelled'` sẽ tính nhầm. Muốn xử
+lý phía agent thì phải sửa prompt, mà sửa prompt cần GPU để đo.

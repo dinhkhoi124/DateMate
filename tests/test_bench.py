@@ -169,3 +169,20 @@ def test_frozen_cells_respect_splits():
         assert c["biz"] not in holdout and c["biz"] in cfg[c["side"]]
         assert f"{c['qid']}|original" in keys                       # every family cell is paired with the original
         assert "question" not in c and "answer" not in c            # ids and labels only (public repo, D14)
+
+
+def test_content_fp_ignores_xlsx_timestamps_and_sees_cell_changes(tmp_path):
+    import time
+    from eval.synth.make import _write_xlsx
+    a, b = tmp_path / "a", tmp_path / "b"
+    for d in (a, b):
+        d.mkdir()
+        (d / "README.md").write_text("# x\n", encoding="utf8")
+    s = [Sheet("t.xlsx", "S", [], ["Mã", "Tiền"], [["D1", 1000], ["D2", 2000]])]
+    _write_xlsx(a / "t.xlsx", s)
+    time.sleep(1.1)                                   # docProps/core.xml timestamps differ
+    _write_xlsx(b / "t.xlsx", s)
+    assert BM._content_fp(a) == BM._content_fp(b)
+    s[0].rows[1][1] = 2001
+    _write_xlsx(b / "t.xlsx", s)
+    assert BM._content_fp(a) != BM._content_fp(b)

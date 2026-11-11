@@ -22,7 +22,7 @@ from datamate.ingest.readme import ReadmeSpec, parse_readme
 from datamate.ingest.reader import read_shop
 from datamate.ingest.tables import Table, build_table
 from datamate.ingest.values import (
-    CANCELLED, DONE, RETURNED, SHIPPING, clean_text, fold, is_blank, is_walkin, parse_bool, parse_date,
+    CANCELLED, DONE, RETURNED, SHIPPING, UNKNOWN, clean_text, fold, is_blank, is_walkin, parse_bool, parse_date,
     parse_datetime, parse_number, parse_payment, parse_qty, parse_status, parse_time,
 )
 
@@ -542,6 +542,14 @@ class Store:
         d["_from_lines"] = True
         self.products = pd.concat([P, d], ignore_index=True)
 
+    def _status_of(self, x):
+        """Raw status -> status: the shop README's own explanation of its values first (readme.status_legend),
+        then the generic vocabulary (values.parse_status). None = not understood."""
+        if is_blank(x):
+            return None
+        m = getattr(self.spec, "status_map", None) or {}
+        return m.get(fold(str(x).strip())) or parse_status(x)
+
     def _resolve_orders(self):
         L, O = self.lines, self.orders
         if not len(L) and not len(O):
@@ -549,7 +557,7 @@ class Store:
         # line-derived order facts
         if len(L):
             g = L.groupby("order_id", sort=False)
-            stp = _umap(L["_raw_status"].astype(object), lambda x: None if is_blank(x) else parse_status(x))
+            stp = _umap(L["_raw_status"].astype(object), lambda x: None if is_blank(x) else self._status_of(x))
             lo = g[["order_date", "order_dt", "_raw_status", "_raw_note", "_raw_customer_id", "_raw_customer_name",
                     "_raw_channel", "_raw_payment_method", "_raw_staff_id"]].first()
             lo.columns = ["l_date", "l_dt", "l_status_raw", "l_note_raw", "l_customer_id", "l_customer_name",
@@ -601,10 +609,10 @@ class Store:
         O["note"] = _umap(O["_raw_note"].astype(object), clean_text)
 
         # status (rulebook §1/§8): cancelled > returned (any evidence) > shipping > done
-        st_raw = _umap(O["_raw_status"].astype(object), parse_status)
+        st_raw = _umap(O["_raw_status"].astype(object), self._status_of)
         st_note = _umap(O["note"].astype(object), parse_status)
         has_status_col = O["_raw_status"].notna().any()
-        unknown_raw = O["_raw_status"].notna() & st_raw.isna()
+        unknown_raw = O["_raw_status"].notna() & st_raw.isna() & ~_umap(O["_raw_status"].astype(object), is_blank).astype(bool)
         if unknown_raw.any():
             vals = sorted({str(v) for v in O.loc[unknown_raw, "_raw_status"].unique()})[:10]
             self.warnings.append(f"unrecognized status values: {vals}")
@@ -617,8 +625,10 @@ class Store:
             if t.col("order_id") is not None:
                 returned_ev |= O["order_id"].isin(set(t.col("order_id").map(clean_text).dropna()))
         cancelled = (base_st == CANCELLED) | O["l_any_cancelled"].fillna(False).astype(bool)
+        # known-invalid (cancelled/returned) > known-valid shipping > unknown (written, unexplained) > done
+        unknown = unknown_raw.fillna(False).astype(bool).values if has_status_col else np.zeros(len(O), bool)
         status = np.where(cancelled, CANCELLED, np.where(returned_ev, RETURNED,
-                          np.where(base_st == SHIPPING, SHIPPING, DONE)))
+                          np.where(base_st == SHIPPING, SHIPPING, np.where(unknown, UNKNOWN, DONE))))
         O["status"] = status
         # rulebook §1: revenue of an order = sum of line amounts; shops with only an invoice list use the
         # order-level 'tiền hàng' (sum of line amounts before order discount, README vocabulary)

@@ -159,11 +159,61 @@ def _gen_shop(side: str, biz: str, seed: int, kinds: list, canc: set, drop_kind:
     return out
 
 
+def _content_fp(path: Path) -> str | None:
+    """Hash of a variant's FILE CONTENT, independent of our ingest code: the freeze check must not fail because ingest
+    improved. csv/md: bytes. xlsx: every zip part except docProps/ (creation timestamps); the sheet XML written by
+    openpyxl 3.1.5 (pinned in docker/requirements.txt) is deterministic. Another openpyxl version may write the same
+    cells differently: then compare with `ingest`, not with this hash."""
+    if not path.exists():
+        return None
+    import zipfile   # noqa: PLC0415
+    h = hashlib.sha1()
+    for f in sorted(p for p in path.iterdir() if p.is_file()):
+        h.update(f.name.encode())
+        if f.suffix.lower() in (".xlsx", ".xlsm"):
+            with zipfile.ZipFile(f) as z:
+                for n in sorted(z.namelist()):
+                    if not n.startswith("docProps/"):
+                        h.update(n.encode())
+                        h.update(z.read(n))
+        else:
+            h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+    return h.hexdigest()[:16]
+
+
+def seal(args):
+    """Add content hashes of the frozen variants to bench_cells.json meta (cells and gen_hash unchanged). Run once,
+    on the machine that built the frozen variants; afterwards materialize/ingest check files, not Store output."""
+    # check=False: on 2026-11-11 the seal came after an ingest-only change (readme.py status legend); the generation
+    # functions and families/make/splits were verified unchanged vs the freeze commit eaead07 before sealing (D24)
+    meta, cells = load_cells(check=False)
+    if "content_fp" in meta and not args.force:
+        sys.exit("already sealed")
+    meta["content_fp"] = {k: _content_fp(BENCH / k.split("|")[0] / k.split("|")[1] / "data" / k.split("|")[2])
+                          for k in sorted(meta["variant_fp"])}
+    meta["rulebook_sha1"] = {f"{s}|{f}": hashlib.sha1((BENCH / s / "rulebooks" / f"{f}.md").read_bytes()).hexdigest()[:16]
+                             for s in F.SIDES for f in F.RULEBOOK_FAMILIES}
+    meta["sealed"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _atomic_write(CELLS, json.dumps({"meta": meta, "cells": cells}, ensure_ascii=False, indent=1))
+    print(f"sealed {len(meta['content_fp'])} variants")
+
+
+def _stamp_key(seed: int, drop_kind: str | None) -> str:
+    """Resume key of one shop's variants: generation code only (families, make, _gen_shop), NOT ingest code, so an
+    ingest fix does not force regenerating unchanged variants (content is still verified against the seal)."""
+    import inspect   # noqa: PLC0415
+    h = hashlib.sha1()
+    for f in (Path(F.__file__), ROOT / "eval" / "synth" / "make.py"):
+        h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+    h.update(inspect.getsource(_gen_shop).encode())
+    return f"{h.hexdigest()[:16]}|{seed}|{drop_kind}"
+
+
 def _gen_job(job: tuple) -> tuple:
     """Process-pool worker: (side, biz, seed, drop_kind) -> (side, biz, {family: (applicable, fp)})."""
     side, biz, seed, drop_kind = job
     stamp = STAMPS / f"{side}__{biz}.json"
-    key = f"{gen_hash()}|{seed}|{drop_kind}"
+    key = _stamp_key(seed, drop_kind)
     if stamp.exists():   # resume: this shop finished in an earlier (interrupted) run with the same generator
         try:
             st = json.loads(stamp.read_text(encoding="utf8"))
@@ -207,8 +257,14 @@ def materialize(args):
             for side, biz in sorted({(c["side"], c["biz"]) for c in cells})]
     for (side, biz), res in sorted(_gen_all(jobs, args.jobs).items()):
         for fam, (ok, fp) in res.items():
-            if fp != meta["variant_fp"].get(f"{side}|{fam}|{biz}"):
-                bad.append(f"{side}|{fam}|{biz}")
+            key = f"{side}|{fam}|{biz}"
+            want_c = meta.get("content_fp", {}).get(key)
+            if want_c is not None or "content_fp" in meta:   # sealed: compare the FILES, independent of ingest code
+                got_c = _content_fp(BENCH / side / fam / "data" / biz) if ok else None
+                if got_c != want_c:
+                    bad.append(key)
+            elif fp != meta["variant_fp"].get(key):          # unsealed (old): Store fingerprint
+                bad.append(key)
     print(f"materialized; {len(bad)} variants differ from the frozen build" + (f": {', '.join(bad)}" if bad else ""))
     if bad:
         sys.exit(1)
@@ -359,45 +415,84 @@ def _summary(cells):
 
 
 def load_cells(check: bool = True) -> tuple[dict, list]:
+    """Frozen identity. Before sealing: the generator code hash. After `seal`: the cells + the CONTENT hash of every
+    variant (BENCHMARK.md §3), so ingest/rule code may improve without unfreezing; generated files are verified by
+    content in materialize / ingest / run instead."""
     d = json.loads(CELLS.read_text(encoding="utf8"))
     if check and d["meta"]["gen_hash"] != gen_hash():
-        sys.exit(f"bench_cells.json was built by generator {d['meta']['gen_hash']}, current code is {gen_hash()}: "
-                 "the benchmark is frozen (BENCHMARK.md §6); rebuild only with a new D-entry")
+        if "content_fp" not in d["meta"]:
+            sys.exit(f"bench_cells.json was built by generator {d['meta']['gen_hash']}, current code is {gen_hash()}: "
+                     "the benchmark is frozen (BENCHMARK.md §3); rebuild only with a new D-entry")
+        print(f"[bench] generator code changed since the freeze ({d['meta']['gen_hash']} -> {gen_hash()}); "
+              "variants are checked by sealed content", file=sys.stderr)
     return d["meta"], d["cells"]
+
+
+def _fp_job(job: tuple) -> tuple:
+    """(key, shop dir) -> (key, normalised Store fingerprint | 'ExceptionName')."""
+    from eval.synth.run import fingerprint   # noqa: PLC0415
+    key, path = job
+    try:
+        return key, json.loads(json.dumps(fingerprint(Store.build(path, use_cache=False)), sort_keys=True, default=str))
+    except Exception as e:  # noqa: BLE001
+        return key, type(e).__name__
+
+
+def _parallel(fn, jobs: list, n_jobs: int) -> list:
+    from concurrent.futures import ProcessPoolExecutor   # noqa: PLC0415
+    if n_jobs <= 1:
+        return [fn(j) for j in jobs]
+    with ProcessPoolExecutor(max_workers=n_jobs) as ex:
+        return list(ex.map(fn, jobs))
+
+
+def verify_content(meta: dict, keys: list[str]) -> list[str]:
+    """Sealed variants whose files on disk differ from the freeze (empty = OK)."""
+    cf = meta.get("content_fp", {})
+    return [k for k in keys if k in cf and _content_fp(BENCH / k.split("|")[0] / k.split("|")[1] / "data" / k.split("|")[2]) != cf[k]]
 
 
 # ====================================================================== ingest fidelity
 def ingest(args):
     """Store fingerprint of every variant vs the original (fraction of fingerprint fields equal). drop_table is
     excluded (its diff is the point). Also checks the variants on disk are the frozen ones (variant_fp)."""
-    from eval.synth.run import compare, fingerprint   # noqa: PLC0415
+    from eval.synth.run import compare   # noqa: PLC0415
     meta, _ = load_cells()
-    base, rows, stale = {}, defaultdict(list), []
-    for key, fp_frozen in sorted(meta["variant_fp"].items()):
+    keys = sorted(meta["variant_fp"])
+    stale = verify_content(meta, keys) if args.verify else []
+    todo = [k for k in keys if args.recompute or not _fp_path(k).exists()]
+    fresh = dict(_parallel(_fp_job, [(k, BENCH / k.split("|")[0] / k.split("|")[1] / "data" / k.split("|")[2]) for k in todo]
+                           + [(f"orig|{b}", TRAIN / "data" / b) for b in sorted({k.split("|")[2] for k in keys})],
+                           args.jobs))
+    base, rows = {}, defaultdict(list)
+    for key in keys:
         side, fam, biz = key.split("|")
-        if biz not in base:
-            base[biz] = json.loads(json.dumps(fingerprint(Store.build(TRAIN / "data" / biz)), sort_keys=True, default=str))
-        try:
-            saved = _fp_path(key)
-            fp = (json.loads(saved.read_text(encoding="utf8")) if saved.exists() and not args.recompute
-                  else json.loads(json.dumps(fingerprint(Store.build(BENCH / side / fam / "data" / biz, use_cache=False)),
-                                             sort_keys=True, default=str)))
-        except Exception as e:  # noqa: BLE001
-            rows[(side, fam)].append((biz, 0.0, [f"ERROR {type(e).__name__}"]))
+        base[biz] = fresh[f"orig|{biz}"]
+        fp = fresh[key] if key in fresh else json.loads(_fp_path(key).read_text(encoding="utf8"))
+        if isinstance(fp, str):
+            rows[(side, fam)].append((biz, 0.0, [f"ERROR {fp}"]))
             continue
-        if hashlib.sha1(json.dumps(fp, sort_keys=True).encode()).hexdigest()[:12] != fp_frozen:
-            stale.append(key)
         if fam == "drop_table":
             continue
         diff = compare(base[biz], fp)
         rows[(side, fam)].append((biz, 1 - len(diff) / len(base[biz]), diff))
     print(f"{'side':5}{'family':16}{'shops':>6}{'exact':>7}{'fields ok':>11}   top mismatching fields")
+    rep = {}
     for (side, fam), rs in sorted(rows.items()):
         bad = Counter(d.split(" ")[0] for _, _, ds in rs for d in ds)
+        rep[f"{side}|{fam}"] = {"shops": len(rs), "exact": sum(1 for r in rs if not r[2]),
+                                "fields_ok": float(np.mean([r[1] for r in rs])),
+                                "diff": {b: ds for b, _, ds in rs if ds}}
         print(f"{side:5}{fam:16}{len(rs):6}{sum(1 for r in rs if not r[2]):7}{np.mean([r[1] for r in rs]):11.1%}   "
               f"{', '.join(k for k, _ in bad.most_common(4))}")
+    out = ROOT / "eval" / "runs" / f"{time.strftime('%Y%m%d_%H%M%S')}_bench_ingest"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "report.json").write_text(json.dumps({"gen_hash": meta["gen_hash"], "src_hash": _src_hash(),
+                                                 "recompute": args.recompute, "families": rep},
+                                                ensure_ascii=False, indent=1, default=str), encoding="utf8")
+    print(f"\nreport: {out.relative_to(ROOT)}")
     if stale:
-        print(f"\nWARNING {len(stale)} variants differ from the frozen build: {', '.join(stale[:6])}")
+        print(f"WARNING {len(stale)} variant data dirs differ from the sealed content: {', '.join(stale[:6])}")
 
 
 # ====================================================================== run
@@ -426,7 +521,12 @@ def run(args):
         for (root, rb), cs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1] or "")):
             rootp = ROOT / root
             if not rootp.exists():
-                sys.exit(f"{root} missing: run `bench.py build` first")
+                sys.exit(f"{root} missing: run `bench.py materialize` first")
+            fam = cs[0]["family"]
+            if fam in F.DATA_FAMILIES and not args.force:
+                bad = verify_content(meta, sorted({f"{c['side']}|{fam}|{c['biz']}" for c in cs}))
+                if bad:
+                    sys.exit(f"variants differ from the sealed benchmark: {', '.join(bad[:5])} (run materialize)")
             agent = make_agent(llm, rootp, ROOT / rb if rb else None,
                                enabled=args.agent == "codegen" if args.agent else None)
             ctx = Context(root=rootp, llm=None if agent else llm, rulebook=ROOT / rb if rb else None, agent=agent)
@@ -788,10 +888,14 @@ def main():
     b.add_argument("--rebuild", action="store_true", help="re-select cells (unfreezes the benchmark: new D-entry)")
     b.add_argument("--reuse-rule-pass", action="store_true", help="reuse eval/synth/out/bench/rule_pass.json")
     b.add_argument("--jobs", type=int, default=3)
+    se = sub.add_parser("seal")
+    se.add_argument("--force", action="store_true")
     m = sub.add_parser("materialize")
     m.add_argument("--jobs", type=int, default=3)
     ig = sub.add_parser("ingest")
     ig.add_argument("--recompute", action="store_true", help="rebuild variant Stores instead of the saved fingerprints")
+    ig.add_argument("--jobs", type=int, default=2)
+    ig.add_argument("--verify", action="store_true", help="also check variant files against the sealed content (slow)")
     r = sub.add_parser("run")
     r.add_argument("--arm", required=True, help="name of the configuration under test (e.g. base, s1_schema)")
     r.add_argument("--side", choices=F.SIDES)
@@ -809,7 +913,7 @@ def main():
     s.add_argument("--bootstrap", type=int, default=2000)
     s.add_argument("--errors", type=int, default=0, help="list N wrong cells of side A (never side B)")
     args = ap.parse_args()
-    {"build": build, "materialize": materialize, "ingest": ingest, "run": run, "score": score_cmd}[args.cmd](args)
+    {"build": build, "seal": seal, "materialize": materialize, "ingest": ingest, "run": run, "score": score_cmd}[args.cmd](args)
 
 
 if __name__ == "__main__":
