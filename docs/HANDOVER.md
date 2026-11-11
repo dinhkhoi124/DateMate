@@ -1,9 +1,12 @@
 # HANDOVER — Bàn giao DataMate cho nhóm (11/11/2026)
 
-Từ 12/11 Khôi (lead cũ) **không tham gia nữa**. Hai thành viên còn lại nhận toàn bộ: cải tiến, nộp public, nộp image
-final (16/11) và chạy private (20–23/11). File này là điểm bắt đầu. Đọc hết **một lần** trước khi làm gì khác.
+Từ 12/11 Khôi chuyển sang vai trò **PM**: không trực tiếp làm kỹ thuật hằng ngày, nhưng **giữ quyền quyết định** cấu
+hình cuối, build image, Test Solution và nộp public. Hai thành viên nhận phần thực thi: cải tiến, chạy eval/Kaggle,
+build và kiểm image, chạy private (20–23/11). File này là điểm bắt đầu. Đọc hết **một lần** trước khi làm gì khác.
 
-Trong các tài liệu cũ (`GPU_RUNBOOK.md`, `KAGGLE.md`, `WORKFLOW.md`…), chữ **"lead" nay có nghĩa là Người A** ở mục 2.
+Trong các tài liệu cũ (`GPU_RUNBOOK.md`, `KAGGLE.md`, `WORKFLOW.md`…), chữ **"lead"** nay có nghĩa là **PM (Khôi)**
+khi nói về quyết định (chọn cấu hình, chọn image, bấm nộp), và **Người A** khi nói về việc kỹ thuật (sửa code, chạy
+eval, đọc kết quả).
 
 ---
 
@@ -17,8 +20,9 @@ Trong các tài liệu cũ (`GPU_RUNBOOK.md`, `KAGGLE.md`, `WORKFLOW.md`…), ch
 | Agent code-gen (Qwen3-14B-AWQ, D20/D22) | code-gen một mình: dev 0.653, holdout **0.444** (precision 0.776). Policy `agree` m=2 trên holdout 0.708 (72 câu) | `src/datamate/agent/` |
 | Public v2 (agent, Kaggle) | **0.117** | như trên |
 | **Image LLM** (`docker/Dockerfile.llm`) | **Chưa build trên GPU.** Mới kiểm build không weights trên CPU | `docs/GPU_RUNBOOK.md` mục 6b |
-| Test | 203 passed; ruff sạch | `pytest tests -q` |
-| Benchmark shop tổng hợp E0 (D24) | **Đóng băng** 534 cell; đã đo ingest (status_codes/status_newword hỏng 24/24 shop). Chưa chạy agent (E2 cần GPU, sau việc nộp image) | `docs/BENCHMARK.md` |
+| Test | 210 passed; ruff sạch | `pytest tests -q` |
+| Benchmark shop tổng hợp E0 (D24) | **Đóng băng và niêm phong** 534 cell (tái lập 0/205 khác). Ingest sau D25: status_newword 100%, status_codes 10/16 A, 5/8 B; layout B và rename_tables A mới phân tích, chưa sửa. **Chưa chạy agent (E2), chỉ chạy sau Test Solution** | `docs/BENCHMARK.md` |
+| Ingest trạng thái (D25) | Trạng thái lạ → `unknown` (không hợp lệ); đọc chú giải trạng thái trong README. Dev, holdout không đổi. **Chưa có trong image rule-only**; PM quyết có đưa vào image LLM không | `docs/DECISIONS.md` D25 |
 
 **Đánh giá thẳng:** agent chưa tổng quát tốt sang shop lạ (dev 0.653 → holdout 0.444), và image LLM chưa từng chạy
 trên 5090. Image rule-only là bản **đã chắc chắn chạy được**. Đó là phương án an toàn cho final.
@@ -29,25 +33,54 @@ trên 5090. Image rule-only là bản **đã chắc chắn chạy được**. Đ
 
 | Người | Phụ trách | Cần |
 |---|---|---|
-| **Người A — kỹ thuật** (người biết Python nhiều hơn) | Sửa code, chạy eval/Kaggle, calibrate, merge PR, ghi `DECISIONS.md`/`EXPERIMENTS.md`, quyết định image final | Laptop CPU, tài khoản GitHub (admin repo), tài khoản Kaggle |
-| **Người B — vận hành & nộp bài** | Máy 5090 (build/kiểm image, chạy private), Drive, MD5, form nộp, theo dõi forum/BTC, đặt GPU dự phòng | Máy 5090 (hoặc GPU thuê), tài khoản portal cuộc thi, Drive nhóm, tài khoản Kaggle |
+| **PM — Khôi** | **Quyết định cuối**: cấu hình nộp (AgentConfig, policy, model), image final, thời điểm build image, nộp Test Solution, nộp public, nộp form "Solution Submission". Duyệt PR vào `main`. Phân công E2 sau khi Test Solution xong | Quyền admin GitHub, tài khoản portal (nộp bài), Owner Drive |
+| **Người A — kỹ thuật** (người biết Python nhiều hơn) | Sửa code, chạy eval/Kaggle, calibrate, ghi `DECISIONS.md`/`EXPERIMENTS.md`. **Chuẩn bị số liệu và đề xuất** cho PM (không tự chốt cấu hình hay image) | Laptop CPU, tài khoản GitHub (write), tài khoản Kaggle |
+| **Người B — vận hành** | Máy 5090: build/kiểm image **khi PM yêu cầu**, chạy private; Drive, MD5, chuẩn bị file nộp; theo dõi forum/BTC; đặt GPU dự phòng | Máy 5090 (hoặc GPU thuê), Drive nhóm (Editor), tài khoản Kaggle |
 
-Hai người **review PR của nhau** (luật nhóm: mỗi PR có người thứ hai xem).
+Hai người **review PR của nhau**; PR vào `main` cần PM duyệt. Mọi việc **bấm nộp** (public, Test Solution, Solution
+Submission) do PM làm hoặc PM xác nhận bằng tin nhắn trước.
+
+### Mặc định khi PM vắng
+
+Các mặc định này áp dụng khi PM không trả lời được. Không ai được tự chọn cấu hình khác thay cho PM.
+
+- **Image final:** nếu đến **16/11 18:00** vẫn chưa có quyết định của PM, final = **image rule-only đã qua Test
+  Solution** (MD5 `8cf7dec3b6e6383a339921657ab68d8a`, build từ `3c5848c`, tar trên Drive). Không nộp image LLM, kể cả
+  khi nó đã qua cổng, nếu PM chưa chọn.
+- **Người nộp form "Solution Submission":** nếu PM vắng lúc 16/11 18:00, Người B nộp image rule-only ở trên bằng tài
+  khoản đã kiểm nộp được (mục 3b), trước 23:59, rồi nhắn nhóm link Drive và MD5 đã nộp.
+- **Public:** khi PM vắng thì không nộp public. Public chỉ để theo dõi (D21), bỏ một lượt không ảnh hưởng điểm.
+- **Private 20–23/11:** Người B chạy **đúng image đã nộp**, kiểm `submit_check`, và upload trước 23/11 23:59 nếu PM
+  không xác nhận được trước 23/11 18:00.
+- **Code:** khi PM vắng thì không merge vào `main` và không build image mới.
 
 ---
 
-## 3. Khôi làm trước khi rời (checklist bàn giao quyền)
+## 3. Checklist bàn giao (PM làm)
 
-- [ ] Merge nhánh `fix/agent-runtime-errors` vào `main` (PR, CI xanh). Sau đó **mọi việc làm từ `main`**
-- [ ] GitHub: mời hai người làm collaborator, đưa Người A quyền **Admin** (ruleset `protect-main`, Settings)
-- [ ] Sửa `.github/CODEOWNERS`: thay `@dinhkhoi124` bằng tài khoản GitHub của Người A
-- [ ] Drive nhóm: chuyển quyền **Owner** thư mục `DataMate/` cho Người B. Kiểm thư mục có: `data/train.zip`,
-      `data/public_test.zip`, tar image rule-only (MD5 `8cf7dec3…`), các zip Kaggle (`datamate_dev_*`, `datamate_public_*`)
-- [ ] Kaggle: share hai dataset private `datamate-train`, `datamate-public` cho tài khoản Kaggle của hai người
-      (hoặc để họ tự tạo lại theo `docs/KAGGLE.md`)
-- [ ] Portal cuộc thi: xác nhận ai trong đội có quyền **nộp public, Test Solution và form "Solution Submission"**.
-      Nếu chỉ tài khoản Khôi nộp được thì đổi người đại diện hoặc đưa Người B quyền nộp
-- [ ] Nhắn nhóm: link file này, và thông tin liên lạc nếu có câu hỏi khẩn
+### 3a. Nhánh code (chưa merge)
+- [ ] **Chưa merge** `fix/agent-runtime-errors`. PM duyệt trước: commit history (`git log --oneline main..HEAD`),
+      diff (`git diff --stat main...HEAD`), test (`pytest tests -q`) và CI trên PR. Merge khi PM đồng ý; sau đó
+      **mọi việc làm từ `main`**. Nhánh chưa push lên GitHub: push và mở PR trước khi duyệt
+- [ ] Thay đổi ingest ngày 11/11 (chú giải trạng thái từ README, trạng thái `unknown`) làm đổi hành vi trên shop có
+      trạng thái lạ. Dev không đổi (2410/0/37). PM quyết có đưa vào image LLM hay không. Image rule-only đã qua Test
+      Solution build từ `3c5848c` và **không** có thay đổi này
+
+### 3b. Quyền truy cập
+| Hệ thống | Việc cần làm | PM giữ | Người A | Người B |
+|---|---|---|---|---|
+| **GitHub** repo | Mời collaborator; ruleset `protect-main` giữ nguyên; `.github/CODEOWNERS` thêm Người A cạnh `@dinhkhoi124` (PM vẫn duyệt) | Admin | Write | Write |
+| **Drive** thư mục `DataMate/` | Kiểm có: `data/train.zip`, `data/public_test.zip`, tar rule-only (MD5 `8cf7dec3…`), zip Kaggle (`datamate_dev_*`, `datamate_public_*`). Tar image mới upload vào đây | Owner | Viewer | Editor |
+| **Kaggle** | Share dataset private `datamate-train`, `datamate-public` (hoặc tạo lại theo `docs/KAGGLE.md`). Mỗi tài khoản 30 giờ GPU/tuần: ghi ai dùng bao nhiêu | Owner dataset | Collaborator | Collaborator |
+| **Portal cuộc thi** | Xác nhận tài khoản nào nộp được public, Test Solution, "Solution Submission" và upload private. **PM nộp**; nếu 20–23/11 PM vắng thì Người B upload private theo tin nhắn xác nhận của PM | Người nộp | – | Dự phòng upload private |
+| **Máy 5090 / GPU thuê** | Đặt lịch 12/11 (build image LLM) và 20–23/11 (private); phương án thuê dự phòng | Duyệt chi phí | – | Quản lý |
+| **Liên lạc** | Nhóm chat; PM trả lời câu hỏi chặn trong ngày | ✓ | ✓ | ✓ |
+
+- [ ] **Kiểm tài khoản portal của từng thành viên** (Người A, Người B): đăng nhập, vào DataMate, xem có thấy và dùng
+      được các mục **nộp public**, **Test Solution**, form **"Solution Submission"** và **upload private** không.
+      Chỉ mở form để kiểm, **không bấm nộp**. Ghi kết quả (ai nộp được mục nào) vào nhóm chat. Nếu chỉ tài khoản PM
+      nộp được thì hỏi BTC cách thêm người nộp, trước 14/11, vì mục "Mặc định khi PM vắng" cần Người B nộp được
+- [ ] Nhắn nhóm: link file này và lịch mục 4
 
 ---
 
@@ -56,15 +89,15 @@ Hai người **review PR của nhau** (luật nhóm: mỗi PR có người thứ
 Hạn cứng: **Test Solution đóng 15/11 23:59 (1 lượt/ngày)** · **Nộp image final 16/11 23:59 (tối đa 2 lần, BTC xét lần
 cuối)** · **Private: 20/11 09:00 → 23/11 23:59, cần GPU** · Public: tối đa 5 lần/ngày, đến 16/11.
 
-### 12/11 — Cài đặt + thử image LLM (Người B, máy 5090)
+### 12/11 — Cài đặt + thử image LLM (Người B, máy 5090; PM chọn commit để build)
 1. Cả hai: cài repo theo `README.md` mục "Cài đặt", chạy `pytest tests -q` (phải xanh) và
    `eval/run_eval.py --split dev` (phải ra **0.985**). Ra số khác thì dừng, xem lại dữ liệu/phiên bản thư viện.
-2. Người B: làm `docs/GPU_RUNBOOK.md` **mục 2, 3, 6b**: tải `Qwen/Qwen3-14B-AWQ`, build `Dockerfile.llm`, chạy
+2. Người B: build từ **commit PM chỉ định**, làm `docs/GPU_RUNBOOK.md` **mục 2, 3, 6b**: tải `Qwen/Qwen3-14B-AWQ`, build `Dockerfile.llm`, chạy
    `scripts/gpu/check_image.sh <tag> data/train/train` **hai lần**. Ghi lại: exit code, tổng thời gian, giây/câu,
    PA train của mỗi lần, độ lệch hai lần.
-3. Gửi các số đó cho Người A (chỉ số, không gửi nội dung câu hỏi).
+3. Gửi các số đó cho PM và Người A (chỉ số, không gửi nội dung câu hỏi).
 
-### 13–14/11 — Quyết định image final (Người A)
+### 13–14/11 — Quyết định image final (PM quyết; Người A chuẩn bị số liệu)
 Image LLM **chỉ được chọn** khi đạt đủ cả ba cổng (D23, luật đề):
 - Hai lần chạy trên train lệch **≤ 0.03** (mục tiêu ≤ 0.01).
 - Thời gian ước tính cho private **≤ 6 giờ**, tính cả load model. Docker Guide ước ~500 câu, tức trung bình
@@ -74,10 +107,16 @@ Image LLM **chỉ được chọn** khi đạt đủ cả ba cổng (D23, luật
 Không đạt cổng nào thì **final = image rule-only** (đã passed). Không được chọn image bằng cách so điểm public
 (CLAUDE.md luật 8, D21).
 
-Nếu image LLM đạt: Người B upload tar lên Drive (30–40 GB, mất nhiều giờ), tính MD5, nộp **Test Solution #2** trước
-**15/11 23:59**.
+Nếu image LLM đạt và PM chọn: Người B upload tar lên Drive (30–40 GB, mất nhiều giờ), tính MD5; **PM nộp Test
+Solution #2** trước **15/11 23:59**. **Ưu tiên tuyệt đối**: không việc nghiên cứu nào (kể cả benchmark E2) được chiếm
+GPU hay thời gian cần cho việc build, kiểm và nộp Test Solution.
 
 ### 13–15/11 — Cải thiện điểm (Người A, song song, chỉ khi còn thời gian)
+
+**Benchmark E2 (agent trên shop tổng hợp, `docs/BENCHMARK.md`) chưa chạy.** Chỉ chạy **sau khi Test Solution đã
+xong** và còn đủ GPU (ước khoảng 12 giờ Kaggle T4). Người chạy do PM phân công sau Test Solution. Phần CPU (ingest
+trên synthetic: `bench.py ingest`) chạy được bất cứ lúc nào.
+
 Chỉ làm trên **train** (dev để sửa, holdout chỉ xem số tổng). Mỗi thay đổi: chạy dev, ghi một dòng `EXPERIMENTS.md`.
 Theo thứ tự lợi/công:
 1. **Lỗi runtime còn lại của agent** (EXPERIMENTS 11/11): `find_units` bịa tên helper (2), `KeyError` cột (4),
@@ -87,13 +126,13 @@ Theo thứ tự lợi/công:
    `Qwen/Qwen2.5-Coder-14B-Instruct-AWQ`, `Qwen/Qwen3-8B-AWQ` (`docs/KAGGLE.md` mục "Chọn model").
 3. Mọi thay đổi code sau khi image đã build thì **phải build lại image và kiểm lại cổng**. Từ 15/11 chỉ sửa lỗi chặn.
 
-### 16/11 — Nộp final (Người B, Người A xác nhận)
-1. Chốt commit trên `main`, gắn tag `vfinal`.
+### 16/11 — Nộp final (PM nộp; Người B chuẩn bị tar/MD5, Người A xác nhận số liệu)
+1. PM chốt commit trên `main`, gắn tag `vfinal`.
 2. Tar image trên Drive **public link**, MD5 khớp, thử tải về từ một máy khác.
-3. Nộp form "Solution Submission" **trước 23:59** (để dư vài giờ). Model type: **"Based on small models (<=15B)"**.
+3. PM nộp form "Solution Submission" **trước 23:59** (để dư vài giờ). Model type: **"Based on small models (<=15B)"**.
 4. Ghi vào `EXPERIMENTS.md` và tick `PLAN.md`. Giữ nguyên tar và MD5: private **bắt buộc chạy đúng image này**.
 
-### 20–23/11 — Private (Người B)
+### 20–23/11 — Private (Người B chạy; PM upload hoặc xác nhận trước khi upload)
 1. **Trước 16/11 phải chắc có GPU** cho 20–23/11 (máy 5090 thành viên; dự phòng thuê 2× 5090). Image rule-only chạy
    được trên CPU nếu mất GPU hoàn toàn, nhưng chỉ khi image final chính là rule-only.
 2. 20/11 sau 09:00: tải private → `docker load` đúng tar đã nộp → chạy đúng lệnh BTC (`docker/README.md` mục "Chạy")
