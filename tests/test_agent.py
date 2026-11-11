@@ -210,3 +210,28 @@ def test_resubmit_official_vs_experiment(tmp_path, monkeypatch):
     resubmit_agent.main()
     assert (tmp_path / "s.jsonl").read_text(encoding="utf8").strip() == '{"id": "a", "type": "abstain"}'
     assert '"min_votes": 2' in (tmp_path / "s.jsonl.meta.json").read_text(encoding="utf8")
+
+
+def test_period_label_matches_phrase():
+    from datamate.agent.helpers import PeriodLabel
+    lab = PeriodLabel("2026-05", "thang 5/2026")
+    assert lab == "2026-05" and lab == "Tháng 5/2026" and lab == "tháng 5/2026 "
+    assert lab != "tháng 4/2026" and str(lab) == "2026-05"
+    import pickle
+    assert type(pickle.loads(pickle.dumps(lab))) is str
+
+
+def test_sandbox_datetime_prebound():
+    code = "def solve(T, H):\n    return (datetime.date(2026, 4, 21) + timedelta(days=1)).isoformat()\n"
+    assert exec_solve(code, {}, None) == "2026-04-22"
+
+
+def test_between_bool_inclusive():
+    import pandas as pd
+
+    from datamate.agent.sandbox import install_between_bool
+    install_between_bool()
+    s = pd.Series([1, 2, 3])
+    assert s.between(1, 3, inclusive=True).tolist() == [True, True, True]
+    assert s.between(1, 3, inclusive=False).tolist() == [False, True, False]
+    assert s.between(1, 3, inclusive="left").tolist() == [True, True, False]

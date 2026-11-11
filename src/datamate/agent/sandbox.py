@@ -44,7 +44,11 @@ def exec_solve(code: str, T: dict, H) -> object:
     """Execute `code` (must define solve(T, H)) in restricted globals and return solve's result."""
     import numpy as np  # noqa: PLC0415
     import pandas as pd  # noqa: PLC0415
-    g = {"__builtins__": safe_builtins(), "pd": pd, "np": np, "date": date, "__name__": "solution"}
+    import datetime as _dt  # noqa: PLC0415
+    # `datetime` (the module) and `timedelta` are pre-bound: models write `datetime.date(...)` without importing
+    # it (NameError). Code that does `from datetime import datetime` just rebinds the name.
+    g = {"__builtins__": safe_builtins(), "pd": pd, "np": np, "date": date, "datetime": _dt,
+         "timedelta": _dt.timedelta, "__name__": "solution"}
     exec(compile(code, "<solution>", "exec"), g)  # noqa: S102  (sandboxed model code is the point of this module)
     fn = g.get("solve")
     if not callable(fn):
@@ -103,6 +107,24 @@ def install_merge_coalesce():
 
     merge._datamate = df_merge._datamate = True
     pd.merge, pd.DataFrame.merge = merge, df_merge
+    install_between_bool()
+
+
+def install_between_bool():
+    """Worker process only: Series.between(..., inclusive=True/False), the pandas < 1.3 spelling models still use,
+    maps to "both"/"neither" (its old meaning) instead of raising ValueError."""
+    import pandas as pd  # noqa: PLC0415
+    orig = pd.Series.between
+    if getattr(orig, "_datamate", False):
+        return
+
+    def between(self, left, right, inclusive="both"):
+        if isinstance(inclusive, bool):
+            inclusive = "both" if inclusive else "neither"
+        return orig(self, left, right, inclusive=inclusive)
+
+    between._datamate = True
+    pd.Series.between = between
 
 
 # --------------------------------------------------------------------------- worker side

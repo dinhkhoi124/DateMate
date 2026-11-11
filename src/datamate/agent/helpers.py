@@ -16,10 +16,37 @@ from datamate.timeparse.periods import (LunarCalendar, Period, find_periods, mon
                                         quarter_period, same_period_last_year, tet_period, week_start)
 
 
-def _p(p: Period | None) -> dict | None:
+class PeriodLabel(str):
+    """A period label ('2026-05') that also equals the phrase it was read from ('tháng 5/2026'), compared after
+    normalize() (case, accents, spaces). Models write `next(p for p in H.periods(...) if p["label"] ==
+    "tháng 5/2026")`; with the bare canonical label that raised StopIteration. Still a plain str otherwise."""
+
+    def __new__(cls, label: str, phrase: str = ""):
+        from datamate.normalize.text import normalize  # noqa: PLC0415
+        s = super().__new__(cls, label)
+        s._keys = frozenset(k for k in (normalize(label).strip(), normalize(phrase).strip()) if k)
+        return s
+
+    def __eq__(self, other):
+        if isinstance(other, str) and not str.__eq__(self, other):
+            from datamate.normalize.text import normalize  # noqa: PLC0415
+            return normalize(other).strip() in self._keys
+        return str.__eq__(self, other)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    __hash__ = str.__hash__
+
+    def __reduce__(self):   # pickles (worker -> parent) as a plain str
+        return (str, (str(self),))
+
+
+def _p(p: Period | None, text: str = "") -> dict | None:
     if p is None:
         return None
-    return {"start": p.start, "end": p.end, "kind": p.kind, "label": p.label}
+    a, b = p.span if p.span else (0, 0)
+    return {"start": p.start, "end": p.end, "kind": p.kind, "label": PeriodLabel(p.label, text[a:b] if b > a else "")}
 
 
 def round_half_up(x: float, nd: int = 0) -> float:
@@ -49,7 +76,7 @@ class Helpers:
         """Periods mentioned in `text` (default: this question), in order of appearance, relative to as_of."""
         from datamate.normalize.text import normalize  # noqa: PLC0415
         t = self._q if text is None else normalize(text)
-        return [_p(p) for p in find_periods(t, self.as_of, self._cal, self._rules)]
+        return [_p(p, t) for p in find_periods(t, self.as_of, self._cal, self._rules)]
 
     def month(self, y: int, m: int) -> dict:
         return _p(month_period(y, m))
