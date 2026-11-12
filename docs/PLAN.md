@@ -59,6 +59,11 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 - [ ] Thử agent SQL trên laptop bằng llama.cpp (`--llamacpp`, chỉ bắt lỗi định dạng/SQL, không chọn cấu hình)
 - [ ] **[Kaggle]** Agent SQL trên 72 câu dev (`AGENT = "sql"`, `docs/KAGGLE.md`), so với code-gen một mình 0.653
       (56/9/7); sau đó holdout chỉ số tổng, so 0.444 (precision 0.776). Luật nhận: precision holdout ≥ 0.85
+- [x] Công cụ đọc kết quả SQL: `eval/sql_report.py` (theo op, lớp lỗi DuckDB, giây/câu, `--compare` với code-gen);
+      `bench.py run --agent sql`, `bench.py regold` (18/18 gold recomputed); notebook dev in tiến độ mỗi phút và có
+      `RUN_BENCH`. A-2: benchmark ingest tái lập khớp BENCHMARK §7 (0 variants differ)
+- [ ] **[Kaggle]** E2 agent SQL trên benchmark side B (`RUN_BENCH = True`), chỉ số tổng: precision, stale
+      (`rule_exception`), forced-answer
 - [ ] PM: quyết có build image LLM với `--build-arg AGENT=sql` không (cổng D23, Test Solution trước 15/11 23:59)
 
 **13–15/11**

@@ -270,6 +270,35 @@ def materialize(args):
         sys.exit(1)
 
 
+def regold(args):
+    """Re-create gold_recomputed.json (gitignored, written only by `build`) on a machine that only ran
+    `materialize`: the same rule passes as build (original rulebook vs the side's rule_param rulebook). Cells and
+    sealed content are untouched; a recomputed cell without a gold here is left out of PA by `score`."""
+    if RECOMP.exists() and not args.force:
+        sys.exit(f"{RECOMP.relative_to(ROOT)} exists (use --force to rebuild it)")
+    meta, cells = load_cells()
+    cfg = load_splits()
+    golds = {g["id"]: g for g in load_jsonl(TRAIN / "answers.jsonl")}
+    by_shop = defaultdict(list)
+    for q in load_jsonl(TRAIN / "questions.jsonl"):
+        by_shop[q["business_id"]].append(q)
+    want = {f"{c['side']}|{c['qid']}" for c in cells if c["label"] == "recomputed"}
+    t0, recomputed = time.time(), {}
+    for side in F.SIDES:
+        rb = BENCH / side / "rulebooks" / "rule_param.md"
+        if not rb.exists():
+            sys.exit(f"{rb} missing: run `bench.py materialize` first")
+        qs = [q for b in cfg[side] for q in by_shop[b] if f"{side}|{q['id']}" in want]
+        orig, rp = rule_pass(qs, TRAIN), rule_pass(qs, TRAIN, rb)
+        for q in qs:
+            g, o, n = golds[q["id"]], orig[q["id"]]["row"], rp[q["id"]]["row"]
+            if score(o, g) == 1 and n.get("type") not in ABSTAINISH and score(n, g) != 1:
+                recomputed[f"{side}|{q['id']}"] = {"type": n["type"], "answer": n.get("answer")}
+    _atomic_write(RECOMP, json.dumps(recomputed, ensure_ascii=False, indent=0))
+    print(f"regold: {len(recomputed)}/{len(want)} recomputed cells have a gold ({time.time() - t0:.0f}s); "
+          f"missing ones are not scored -> {RECOMP.relative_to(ROOT)}")
+
+
 def build(args):
     if CELLS.exists() and not args.rebuild:
         sys.exit(f"{CELLS.name} exists (frozen benchmark): use `materialize`, or `build --rebuild` with a new D-entry")
@@ -527,8 +556,9 @@ def run(args):
                 bad = verify_content(meta, sorted({f"{c['side']}|{fam}|{c['biz']}" for c in cs}))
                 if bad:
                     sys.exit(f"variants differ from the sealed benchmark: {', '.join(bad[:5])} (run materialize)")
+            kind = args.agent if args.agent in ("codegen", "sql") else None
             agent = make_agent(llm, rootp, ROOT / rb if rb else None,
-                               enabled=args.agent == "codegen" if args.agent else None)
+                               enabled=kind is not None if args.agent else None, kind=kind)
             ctx = Context(root=rootp, llm=None if agent else llm, rulebook=ROOT / rb if rb else None, agent=agent)
             by_q = {c["qid"]: c for c in cs}
             for q, row, tr in answer_many([qs[c["qid"]] for c in cs], ctx):
@@ -586,9 +616,17 @@ def runtime_class(r: dict) -> str | None:
     st = r.get("status")
     if st == "ok":
         return None
-    if st in ("timeout", "no_code"):
+    if st in ("timeout", "no_code", "empty", "no_sql"):   # empty / no_sql: text-to-SQL agent (D26)
         return st
     e = str(r.get("result") or "")
+    if re.search(r"Binder Error|Catalog Error", e):          # DuckDB: column / table not in the views
+        return "column"
+    if re.search(r"Parser Error", e):
+        return "syntax"
+    if "does not fit TYPE" in e:
+        return "type_shape"
+    if re.search(r"Conversion Error|Invalid Input Error", e):
+        return "conversion"
     last = e.strip().splitlines()[-1] if e.strip() else ""
     if "object has no attribute" in last and re.search(r"'Helpers'|module 'H'|'H'", last):
         return "helper_hallucinated"
@@ -906,14 +944,17 @@ def main():
     r.add_argument("--llm", choices=["off", "vllm", "replay"])
     r.add_argument("--llm-model")
     r.add_argument("--llm-replay")
-    r.add_argument("--agent", choices=["off", "codegen"])
+    r.add_argument("--agent", choices=["off", "codegen", "sql"])
+    rg = sub.add_parser("regold")
+    rg.add_argument("--force", action="store_true", help="overwrite an existing gold_recomputed.json")
     s = sub.add_parser("score")
     s.add_argument("runs", nargs="+", help="run dirs (shards of one arm are merged)")
     s.add_argument("--baseline", nargs="*", help="run dirs of the baseline arm: paired ΔPA on common cells")
     s.add_argument("--bootstrap", type=int, default=2000)
     s.add_argument("--errors", type=int, default=0, help="list N wrong cells of side A (never side B)")
     args = ap.parse_args()
-    {"build": build, "seal": seal, "materialize": materialize, "ingest": ingest, "run": run, "score": score_cmd}[args.cmd](args)
+    {"build": build, "seal": seal, "materialize": materialize, "ingest": ingest, "run": run, "score": score_cmd,
+     "regold": regold}[args.cmd](args)
 
 
 if __name__ == "__main__":

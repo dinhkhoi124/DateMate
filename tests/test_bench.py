@@ -132,6 +132,15 @@ def test_error_classes():
                              "result": "TypeError: Helpers.in_period() takes 2 positional arguments but 3 were given"}) == "helper_signature"
     assert BM.runtime_class({"status": "timeout"}) == "timeout"
     assert BM.runtime_class({"status": "ok"}) is None
+    # text-to-SQL agent (D26): DuckDB errors and its own sample statuses
+    assert BM.runtime_class({"status": "error", "result": 'BinderException: Binder Error: Referenced column "rev" '
+                                                         "not found in FROM clause!"}) == "column"
+    assert BM.runtime_class({"status": "error",
+                             "result": "CatalogException: Catalog Error: Table with name x does not exist!"}) == "column"
+    assert BM.runtime_class({"status": "error", "result": 'ParserException: Parser Error: syntax error at "FROM"'}) == "syntax"
+    assert BM.runtime_class({"status": "error", "result": "result does not fit TYPE number: 2 columns"}) == "type_shape"
+    assert BM.runtime_class({"status": "empty", "result": "empty result"}) == "empty"
+    assert BM.runtime_class({"status": "no_sql"}) == "no_sql"
     g = {"type": "number", "answer": 290}
     assert BM.semantic_class({"type": "number", "answer": 291}, g) == "near_miss"
     assert BM.semantic_class({"type": "number", "answer": 580}, g) == "unit_factor"
@@ -186,3 +195,24 @@ def test_content_fp_ignores_xlsx_timestamps_and_sees_cell_changes(tmp_path):
     s[0].rows[1][1] = 2001
     _write_xlsx(b / "t.xlsx", s)
     assert BM._content_fp(a) != BM._content_fp(b)
+
+
+@needs_data
+def test_run_passes_the_agent_kind(monkeypatch, tmp_path):
+    """`run --agent sql` builds the text-to-SQL agent (kind='sql'), `--agent codegen` the code-gen one."""
+    import datamate.run as R
+    seen = []
+    monkeypatch.setattr(R, "make_agent", lambda llm, root, rb=None, enabled=None, kind=None: seen.append((enabled, kind)))
+    monkeypatch.setattr(R, "make_llm", lambda *a: None)
+    cell = {"qid": "q1", "biz": "biz_x", "side": "A", "family": "original", "label": "same", "root": "data/train/train",
+            "rulebook": None}
+    monkeypatch.setattr(BM, "load_cells", lambda check=True: ({"gen_hash": "x"}, [cell]))
+    monkeypatch.setattr(BM, "load_jsonl", lambda p: [{"id": "q1", "business_id": "biz_x", "question": "?"}])
+    monkeypatch.setattr("datamate.pipeline.answer_many", lambda qs, ctx: iter(()))
+    for agent, want in (("sql", (True, "sql")), ("codegen", (True, "codegen")), ("off", (False, None))):
+        seen.clear()
+        args = type("A", (), {"side": None, "families": None, "shops": None, "out": str(tmp_path / agent),
+                              "force": True, "llm": None, "llm_model": None, "llm_replay": None, "agent": agent,
+                              "arm": "t"})()
+        BM.run(args)
+        assert seen == [want]

@@ -64,6 +64,34 @@ Chạy trên máy cá nhân bằng llama.cpp (không phải engine của bài n�
 Với k = 8, dòng `m = 4` của `calibrate_agent.py` chính là tau = 0.5. Kiểm tra hợp lý sau vote (`sql_agent.sanity`)
 không được tính lại ở bước calibrate, nên số thật có thể ít câu sai hơn một chút.
 
+`eval/sql_report.py` đọc trace theo đúng cấu hình đã commit (m = ceil(tau × k), có `sanity`). Nó in ra:
+- SQL một mình và từng policy
+- PA theo op
+- trạng thái mẫu và lớp lỗi DuckDB (`binder:column`, `parser`…)
+- giây/câu (median, p95) cùng ước tính cho khoảng 500 câu private
+
+Cờ `--compare <trace code-gen>` thêm bảng chéo từng câu SQL × code-gen trên các câu chung. Holdout dùng
+`--totals-only`. Notebook tự chạy công cụ này khi `AGENT = "sql"` và ghi ra `sql_report_dev.txt`,
+`sql_report_holdout.txt`.
+
+```bash
+PYTHONPATH=src .venv/Scripts/python eval/sql_report.py eval/runs/kaggle_sql/<run>_dev/trace_reexec.jsonl \
+    --compare eval/runs/kaggle_qwen3_14b_v3/<run>_dev/trace.jsonl
+```
+
+**Tiến độ:** cell dev, holdout và bench chạy lệnh nền rồi in mỗi phút số prompt đã xong, đếm theo dòng replay. Số
+này nhảy theo shop. Output đầy đủ nằm trong `run_eval_*.txt` / `bench_run.txt` của zip.
+
+**Benchmark tổng hợp (E2):** đặt `RUN_BENCH = True`, `BENCH_SIDE = "B"`. Notebook dựng lại biến thể đã niêm phong
+(`bench.py materialize`, CPU khoảng 40 phút) rồi chạy `bench.py run --agent {AGENT}`. Side B có 182 cell, khoảng
+5 giờ trên T4. Nên chạy trên một tài khoản khác, song song với holdout (`RUN_DEV = RUN_HOLDOUT = False`,
+`RUN_SMOKE = False`). Lead chấm điểm trên CPU, sau khi giải nén zip:
+
+```bash
+PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py regold        # một lần, nếu chưa có gold_recomputed.json
+PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py score eval/runs/kaggle_bench/bench_sql_<tag>_B
+```
+
 ## Chạy trên public (sinh submission)
 
 Notebook: `scripts/kaggle/datamate_public.ipynb`. Public chỉ dùng để sinh submission (CLAUDE.md luật 1): không mở

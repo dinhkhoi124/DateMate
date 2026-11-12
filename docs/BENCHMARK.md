@@ -152,6 +152,15 @@ PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py run --arm base --side A 
 PYTHONPATH=src .venv/Scripts/python eval/synth/bench.py score eval/runs/<A> eval/runs/<B> [--baseline <dirs>] [--errors 30]
 ```
 Có thể chạy theo shard bằng `--side/--families/--shops`. `score` gộp nhiều thư mục run của cùng một arm.
+
+`run --agent sql` chạy agent text-to-SQL (D26). Lỗi mẫu được xếp vào các lớp của §4:
+- lỗi DuckDB `Binder`/`Catalog` → `column`
+- `Parser` → `syntax`
+- `empty`, `no_sql`, `type_shape`
+
+`gold_recomputed.json` chỉ do `build` sinh ra. Máy chỉ chạy `materialize` thì dùng `regold`: nó chạy lại đúng các
+lượt rule engine của build (rulebook gốc so với `rule_param` của từng side) và không đụng cell hay nội dung niêm
+phong. Ngày 13/11, `regold` tạo lại được đủ 18/18 gold `recomputed`.
 `build` và `materialize` mặc định `--jobs 3`. Máy 16 GB RAM nên dùng `--jobs 2` (`--jobs 3` từng bị dừng vì thiếu RAM).
 
 ## 7. Kết quả ingest trên synthetic (E0 và sau D25, 11/11)
