@@ -41,6 +41,10 @@ def main():
     ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
     ap.add_argument("--llm-model", help="local weights dir")
     ap.add_argument("--llm-replay", help="replay/record jsonl")
+    ap.add_argument("--llamacpp", metavar="URL",
+                    help="local llama-server (eval/llamacpp_backend.py, dev only: not the submission engine)")
+    ap.add_argument("--llamacpp-model", default="llamacpp", help="model id for replay keys, e.g. the GGUF file name")
+    ap.add_argument("--llamacpp-workers", type=int, default=2, help="concurrent requests (= llama-server --parallel)")
     ap.add_argument("--agent", choices=["off", "codegen", "sql"],
                     help="code-gen (D20) or text-to-SQL (D26) agent (default: $DATAMATE_AGENT or off)")
     ap.add_argument("--per-shop", type=int, default=0,
@@ -67,7 +71,15 @@ def main():
                 keep.add(q["id"])
         qs = [q for q in qs if q["id"] in keep]
 
-    llm = make_llm(args.llm, args.llm_model, args.llm_replay)
+    if args.llamacpp:   # personal GPU via llama.cpp (dev only); recorded to --llm-replay when given
+        from datamate.config import LLMConfig  # noqa: PLC0415
+        from datamate.parse.llm import LLMParser, ReplayBackend  # noqa: PLC0415
+        from eval.llamacpp_backend import LlamaCppBackend  # noqa: PLC0415
+        cfg = LLMConfig.from_env(backend="replay", model_id=args.llamacpp_model, replay_path=args.llm_replay or "")
+        be = LlamaCppBackend(args.llamacpp, cfg, workers=args.llamacpp_workers)
+        llm = LLMParser(ReplayBackend(args.llm_replay, cfg, be) if args.llm_replay else be, cfg, examples=[])
+    else:
+        llm = make_llm(args.llm, args.llm_model, args.llm_replay)
     agent = make_agent(llm, TRAIN, args.rulebook, enabled=args.agent in ("codegen", "sql") if args.agent else None,
                        kind=args.agent if args.agent in ("codegen", "sql") else None)
     ctx = Context(root=TRAIN, llm=None if agent else llm, rulebook=args.rulebook, agent=agent)   # D20: rule side pure
