@@ -90,6 +90,20 @@ PYTHONPATH=src .venv/Scripts/python eval/resubmit_agent.py eval/runs/public_pub1
     --data data/public_test/public_test --reexec --out eval/runs/public_pub1/submission.jsonl
 ```
 
+**Agent SQL (D26):** trong cell cấu hình đặt `AGENT = "sql"` và `BRANCH = "feat/sql-agent"` (tới khi merge); Add
+Input thêm dataset **train** `datamate-train` (notebook dựng kho few-shot từ shop dev của train, không đọc gì của
+public để làm ví dụ). Tên zip có tiền tố `datamate_public_sql_`. Gộp shard bằng cờ `--sql`: ngưỡng chính thức là
+`ceil(tau × sql_samples)` của `AgentConfig` đã commit (hiện 4/8), có kiểm tra hợp lý như lúc chạy; `--reexec` chạy
+lại câu trả lời SQL đã ghi trên DuckDB với view hiện tại:
+
+```bash
+PYTHONPATH=src .venv/Scripts/python eval/resubmit_agent.py eval/runs/public_sql1/shard*/log.jsonl \
+    --data data/public_test/public_test --sql --reexec --out eval/runs/public_sql1/submission.jsonl
+```
+
+Trước khi chạy public nên có một lượt dev (`datamate_dev.ipynb`, `AGENT = "sql"`, khoảng 1–2 giờ GPU) để bắt lỗi
+định dạng hoặc SQL hàng loạt, thay vì phát hiện sau khoảng 20 giờ GPU trên public.
+
 Công cụ chỉ in số đếm (nguồn, type). Câu thiếu log được ghi abstain. **Luồng chính thức (D21)**: policy/m lấy từ
 `AgentConfig` đã commit (chọn trên train), không nhận `--policy/--m`, và ghi `submission.jsonl.meta.json` (commit,
 config, số đếm). Thử cấu hình khác chỉ qua `--experiment` trên train; công cụ từ chối `--experiment` trên public.

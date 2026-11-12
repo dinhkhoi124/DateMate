@@ -277,3 +277,13 @@ def test_prompt_budget(store):
     (row, tr), = ag.solve_shop([Q], store)
     assert row is None and ag.too_long == 1 and ag.backend.calls == []
     ag.close()
+
+
+def test_resubmit_sql_vote_applies_sanity():
+    """eval/resubmit_agent.py --sql: share threshold from the committed config and the post-vote sanity checks."""
+    from eval.resubmit_agent import sql_vote
+    ok = {"status": "ok", "result": {"type": "number", "answer": 2.5}}
+    r = {"output": [ok] * 4 + [{"status": "error", "result": "x"}] * 4}
+    assert sql_vote(r, {"question": "có bao nhiêu đơn hàng"}, 4, False) is None          # count not an integer
+    assert sql_vote(r, {"question": "giá trung bình bao nhiêu"}, 4, False)["answer"] == 2.5
+    assert sql_vote(r, {"question": "giá trung bình bao nhiêu"}, 5, False) is None        # 4/8 < 5

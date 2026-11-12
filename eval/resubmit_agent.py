@@ -11,6 +11,10 @@ D21 — official vs experiment are separate paths:
 - **--experiment**: `--policy/--m/--unanswerable` allowed, but only on a split that has `answers.jsonl` (train).
   Refuses public: the public score is never used to pick or tune a config.
 
+- **--sql** (D26): logs of `datamate.run --agent sql`. The official threshold is ceil(tau x sql_samples) of the
+  committed `AgentConfig()` and the post-vote sanity checks run as at inference; `--reexec` re-runs the recorded
+  replies on a fresh DuckDB database (agent/sql_agent.SqlAgent.rerun).
+
 Prints counts only (CLAUDE.md rule 1: public questions are never read for rules or prompts).
 
     python eval/resubmit_agent.py out/shard*/log.jsonl --data data/public_test/public_test \
@@ -20,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 from collections import Counter
@@ -63,6 +68,34 @@ def reexec(recs: list[dict], qs: dict, root: Path) -> int:
     return changed
 
 
+def reexec_sql(recs: list[dict], qs: dict, root: Path) -> int:
+    from datamate.agent.sql_agent import SqlAgent  # noqa: PLC0415
+    from datamate.ingest.store import Store  # noqa: PLC0415
+    agent = SqlAgent(None, AgentConfig(enabled=True, kind="sql"), root)
+    stores, changed = {}, 0
+    try:
+        for r in recs:
+            biz = qs[r["id"]]["business_id"]
+            if biz not in stores:
+                stores[biz] = Store.build(root / "data" / biz)
+            db = agent._shop(biz, stores[biz])[0]
+            new = [{"status": st, "result": row if st == "ok" else err}
+                   for st, row, _, err in (agent.rerun(db, t) for t in (r.get("thinking") or []))]
+            changed += new != (r.get("output") or [])
+            r["output"] = new
+    finally:
+        agent.close()
+    return changed
+
+
+def sql_vote(r: dict, q: dict, m: int, allow_unans: bool) -> dict | None:
+    """revote() plus the SQL agent's post-vote sanity checks (agent/sql_agent.sanity)."""
+    from datamate.agent.sql_agent import sanity  # noqa: PLC0415
+    from datamate.normalize.text import normalize  # noqa: PLC0415
+    row = revote(r.get("output") or [], m, allow_unans)
+    return None if row is not None and sanity(row, normalize(q["question"])) else row
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("logs", nargs="+", help="log.jsonl of each shard (later files win on duplicate ids)")
@@ -73,6 +106,7 @@ def main():
     ap.add_argument("--m", type=int, help="min votes for the code-gen answer")
     ap.add_argument("--unanswerable", action="store_true", help="let a code-gen 'unanswerable' majority through")
     ap.add_argument("--reexec", action="store_true", help="re-run recorded code with the current sandbox first")
+    ap.add_argument("--sql", action="store_true", help="logs of the text-to-SQL agent (D26)")
     args = ap.parse_args()
 
     root = Path(args.data)
@@ -86,6 +120,8 @@ def main():
         if args.policy or args.m or args.unanswerable:
             ap.error("official run: policy/m/unanswerable come from AgentConfig defaults (D21); use --experiment on train")
         args.policy, args.m, args.unanswerable = official.policy, official.min_votes, official.allow_unanswerable
+        if args.sql:   # D26: answer when share >= tau of the k samples
+            args.m = math.ceil(official.tau * official.sql_samples - 1e-9)
     qs = {q["id"]: q for q in load_jsonl(root / "questions.jsonl")}
     by_id: dict[str, dict] = {}
     for p in args.logs:
@@ -95,7 +131,8 @@ def main():
     recs = [by_id[i] for i in sorted(by_id)]
     print(f"{len(qs)} questions, {len(recs)} with a log record, {len(qs) - len(recs)} missing -> abstain")
     if args.reexec:
-        print(f"re-executed: {reexec(recs, qs, root)} questions changed")
+        n = reexec_sql(recs, qs, root) if args.sql else reexec(recs, qs, root)
+        print(f"re-executed: {n} questions changed")
 
     status = Counter(o.get("status") for r in recs for o in (r.get("output") or []))
     tot = sum(status.values()) or 1
@@ -111,12 +148,15 @@ def main():
                 row, s = {"id": qid, "type": "abstain"}, "missing"
             else:
                 rule = {"id": qid, **((r.get("inputs") or {}).get("rule_answer") or {"type": "abstain"})}
-                row, s = combine(rule, revote(r.get("output") or [], args.m, args.unanswerable), args.policy)
+                cg = sql_vote(r, qs[qid], args.m, args.unanswerable) if args.sql else \
+                    revote(r.get("output") or [], args.m, args.unanswerable)
+                row, s = combine(rule, cg, args.policy)
             src[s] += 1
             types[row["type"]] += 1
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     mode = "experiment" if args.experiment else "official"
-    print(f"{mode}: policy={args.policy} m={args.m} unanswerable={'on' if args.unanswerable else 'off'}")
+    print(f"{mode}{' sql' if args.sql else ''}: policy={args.policy} m={args.m} "
+          f"unanswerable={'on' if args.unanswerable else 'off'}")
     print("source: " + "  ".join(f"{k}={v}" for k, v in src.most_common()))
     print("type:   " + "  ".join(f"{k}={v}" for k, v in types.most_common()))
     if not args.experiment:
@@ -127,7 +167,8 @@ def main():
                                         capture_output=True, text=True).stdout.strip())
         except (OSError, subprocess.CalledProcessError):
             commit, dirty = "unknown", True
-        meta = {"mode": mode, "commit": commit, "dirty_src": dirty, "config": asdict(official), "reexec": args.reexec,
+        meta = {"mode": mode, "agent": "sql" if args.sql else "codegen", "m": args.m, "commit": commit,
+                "dirty_src": dirty, "config": asdict(official), "reexec": args.reexec,
                 "logs": [str(p) for p in args.logs], "source": dict(src), "type": dict(types)}
         Path(str(out) + ".meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf8")
         if dirty:
