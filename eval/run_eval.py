@@ -41,7 +41,8 @@ def main():
     ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
     ap.add_argument("--llm-model", help="local weights dir")
     ap.add_argument("--llm-replay", help="replay/record jsonl")
-    ap.add_argument("--agent", choices=["off", "codegen"], help="code-gen agent, D20 (default: $DATAMATE_AGENT or off)")
+    ap.add_argument("--agent", choices=["off", "codegen", "sql"],
+                    help="code-gen (D20) or text-to-SQL (D26) agent (default: $DATAMATE_AGENT or off)")
     ap.add_argument("--per-shop", type=int, default=0,
                     help="keep the first N questions of each shop by id (deterministic subsample for GPU runs)")
     ap.add_argument("--trace", action="store_true", help="write trace.jsonl (code, samples, votes) to the run dir")
@@ -67,7 +68,8 @@ def main():
         qs = [q for q in qs if q["id"] in keep]
 
     llm = make_llm(args.llm, args.llm_model, args.llm_replay)
-    agent = make_agent(llm, TRAIN, args.rulebook, enabled=args.agent == "codegen" if args.agent else None)
+    agent = make_agent(llm, TRAIN, args.rulebook, enabled=args.agent in ("codegen", "sql") if args.agent else None,
+                       kind=args.agent if args.agent in ("codegen", "sql") else None)
     ctx = Context(root=TRAIN, llm=None if agent else llm, rulebook=args.rulebook, agent=agent)   # D20: rule side pure
     preds, sources, traces, t0 = [], {}, {}, time.time()
     for q, row, tr in answer_many(qs, ctx):   # never raises per question (abstain + error in trace)

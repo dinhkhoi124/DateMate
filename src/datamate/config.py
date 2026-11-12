@@ -139,13 +139,26 @@ class AgentConfig:
     # rule x code-gen: 'codegen' (ignore rule), 'rule_first' (rule answer when it has one), 'agree' (rule answer
     # only when code-gen agrees or has no majority; rule abstained -> code-gen)
     policy: str = "agree"
+    # text-to-SQL agent (D26, agent/sql_agent.py): DATAMATE_AGENT=sql. k samples, answer when the winning answer has
+    # share >= tau of k (slide 33 baseline: k=8, tau=0.5), one repair turn for failed queries, empty results never
+    # vote, sanity checks after the vote. tau/policy are chosen on train only (CLAUDE.md rule 8)
+    kind: str = "codegen"               # codegen | sql
+    sql_samples: int = 8
+    tau: float = 0.5
+    repair_turns: int = 1
+    fewshot_k: int = 4
+    sanity: bool = True
 
     @classmethod
     def from_env(cls, **kw) -> "AgentConfig":
-        env: dict = {"enabled": os.environ.get("DATAMATE_AGENT", "off") == "codegen"}
+        mode = os.environ.get("DATAMATE_AGENT", "off")
+        env: dict = {"enabled": mode in ("codegen", "sql"), "kind": mode if mode in ("codegen", "sql") else "codegen"}
         for var, fld, typ in (("DATAMATE_AGENT_SAMPLES", "n_samples", int), ("DATAMATE_AGENT_MIN_VOTES", "min_votes", int),
                               ("DATAMATE_AGENT_POLICY", "policy", str), ("DATAMATE_AGENT_TIMEOUT", "timeout_s", float),
-                              ("DATAMATE_AGENT_MAX_TOKENS", "max_tokens", int)):
+                              ("DATAMATE_AGENT_MAX_TOKENS", "max_tokens", int),
+                              ("DATAMATE_AGENT_SQL_SAMPLES", "sql_samples", int), ("DATAMATE_AGENT_TAU", "tau", float),
+                              ("DATAMATE_AGENT_REPAIR", "repair_turns", int),
+                              ("DATAMATE_AGENT_FEWSHOT_K", "fewshot_k", int)):
             if os.environ.get(var):
                 env[fld] = typ(os.environ[var])
         return cls(**{**env, **kw})

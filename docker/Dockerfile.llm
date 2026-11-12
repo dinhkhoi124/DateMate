@@ -13,6 +13,9 @@ FROM vllm/vllm-openai:v0.10.1.1
 
 # D22: the model every agent number was measured with (Kaggle v3, AWQ 4-bit, fp16 activations)
 ARG MODEL=Qwen3-14B-AWQ
+# D26: agent kind. codegen (D20, default) | sql (text-to-SQL on DuckDB views). PM picks; sql needs the few-shot bank
+# src/datamate/agent/fewshot_sql.jsonl built beforehand (eval/build_fewshot_sql.py, train dev only, gitignored)
+ARG AGENT=codegen
 
 # - temp files only under /tmp (SPEC §7 câu 2): vLLM / torch.compile / triton caches
 # - 2x RTX 5090 (SPEC): tensor parallel over both cards; consumer cards may lack P2P (Docker Guide)
@@ -27,7 +30,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONHASHSE
     NCCL_P2P_DISABLE=1 \
     DATAMATE_LLM=vllm DATAMATE_LLM_MODEL=/code/models/${MODEL} DATAMATE_LLM_TP=2 DATAMATE_LLM_DTYPE=float16 \
     DATAMATE_LLM_MAX_LEN=20480 DATAMATE_LLM_GPU_UTIL=0.90 DATAMATE_LLM_THINKING=0 DATAMATE_LLM_RULE_JUDGE=0 \
-    DATAMATE_AGENT=codegen
+    DATAMATE_AGENT=${AGENT}
 
 WORKDIR /code
 
@@ -53,7 +56,8 @@ COPY pyproject.toml CLAUDE.md /code/training_code/
 COPY src /code/training_code/src
 COPY analysis /code/training_code/analysis
 COPY eval/scorer.py eval/submit_check.py eval/run_eval.py eval/splits.json eval/gpu_smoke.py eval/__init__.py \
-     eval/calibrate_agent.py eval/reexec_agent.py eval/resubmit_agent.py /code/training_code/eval/
+     eval/calibrate_agent.py eval/reexec_agent.py eval/resubmit_agent.py eval/build_fewshot_sql.py \
+     /code/training_code/eval/
 COPY eval/synth /code/training_code/eval/synth
 COPY scripts /code/training_code/scripts
 COPY tests /code/training_code/tests
@@ -67,6 +71,8 @@ RUN sed -i 's/\r$//' /code/predict.sh && chmod +x /code/predict.sh \
 a, l = AgentConfig.from_env(), LLMConfig.from_env(); assert a.enabled and l.backend == 'vllm' and l.max_model_len >= 16384; \
 print('agent', a); print('llm', l.model_path, l.dtype, 'tp', l.tensor_parallel_size, 'len', l.max_model_len)" \
  && { [ "${MODEL}" = "none" ] || test -f "/code/models/${MODEL}/config.json"; } \
+ && { [ "${AGENT}" != "sql" ] || { test -s /code/src/datamate/agent/fewshot_sql.jsonl \
+      && python3 -c "import duckdb, datamate.agent.sql_agent; print('sql agent, duckdb', duckdb.__version__)"; }; } \
  && python3 /code/training_code/docker/make_manifest.py /code/training_code /code/training_code/data_manifest.json
 
 # Guide: organisers run with --entrypoint bash, so the image must not rely on its own entrypoint

@@ -46,6 +46,7 @@ Kế hoạch nghiên cứu lập ngày 11/11 (E0–E6, giải pháp S1–S8). Fi
 | **E4** | S1, S2 (prompt/schema mới, GPU) | ❌ |
 | **E5** | S4, S5, S8 (GPU) | ❌ |
 | **E6** | Chốt cấu hình, holdout, D-entry | ❌ |
+| **D26** | Agent text-to-SQL trên view DuckDB (hướng của baseline BTC). Gồm A3 (kiểm tra hợp lý sau vote) cho đường SQL | 🟡 Code + test CPU xong (nhánh `feat/sql-agent`); chờ Kaggle dev/holdout |
 
 ## 4. Nhóm A — có thể vào bài nộp (CPU, rủi ro thấp, hạn 14/11 12:00)
 

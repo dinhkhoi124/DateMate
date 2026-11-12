@@ -4,6 +4,32 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D26 — Thêm agent text-to-SQL trên view DuckDB (thử nghiệm, mặc định tắt) (2026-11-12)
+- **Bối cảnh:** public 0.114 (rule-only) và 0.117 (agent pandas, precision ước ~60%). Code-gen một mình: dev 0.653 →
+  holdout 0.444. Slide BTC (Zalo AI Track 2, trang 26–39) mô tả baseline cùng cỡ model: agent sinh pandas chỉ đạt
+  public 0.25; đổi sang SQL trên view chuẩn (DuckDB) lên 0.394 với model gốc, và 0.696 khi thêm hint theo câu hỏi,
+  few-shot, ghi chú trước SQL, vote 8 mẫu (ngưỡng share 0.5, rỗng → abstain) và LoRA. Theo slide, lợi lớn nhất đến
+  từ data layer và prompt. Lỗi chính của agent pandas là sai ngữ nghĩa khi tự ghép bảng và tự lọc đơn (27% mẫu).
+- **Lựa chọn:** đường agent thứ hai `DATAMATE_AGENT=sql` (`--agent sql`), cùng giao diện và trace với D20:
+  1. `agent/sqldb.py`: mỗi shop một DuckDB in-memory. Bảng Store như `T`, cộng view `v_orders`, `v_sales` dựng từ
+     `execute/facts.py`, và macro nợ `debt_at`, `debt_new`, `debt_repaid` dựng từ `execute/debt.py`. Luật train trong view
+     chỉ có khi rulebook của split giữ nguyên các dòng liên quan (D18 `blocked`): `is_valid` (§1), macro nợ (§4).
+     Khoá cấu hình sau khi nạp, chỉ cho một câu SELECT, có timeout, một luồng.
+  2. `agent/hints.py`: hint tính bằng code: khoảng ngày (timeparse, đã cắt đến hôm nay như `ops.clip`), tiền viết tắt
+     (`3tr7`), khoá thực thể (linker). Hint chỉ là đầu vào, không chứa đáp án.
+  3. `agent/sql_prompt.py`: rulebook + README + schema + 4 ví dụ + hint; đầu ra `Notes` → `TYPE` → một khối SQL.
+  4. `eval/build_fewshot_sql.py`: ví dụ chỉ từ shop dev, sinh SQL theo mẫu từ intent của rule parser, chỉ giữ câu khớp
+     gold. File `agent/fewshot_sql.jsonl` gitignored như few-shot D14; Kaggle và image dựng lại từ train.
+  5. `agent/sql_agent.py`: k=8 mẫu, một lượt sửa khi SQL lỗi, kết quả rỗng không được bỏ phiếu, trả lời khi share
+     ≥ tau = 0.5, unanswerable của model → abstain (luật 5), kiểm tra hợp lý sau vote.
+- **Lý do:** DuckDB tính, model chỉ chọn phép tính (luật 4). Ngữ nghĩa rulebook nằm trong view đã kiểm, model không phải
+  tự lọc đơn hay ghép bảng. Đo trên CPU: mẫu SQL trên view khớp gold **1649/1649** câu dev đã thử (14 op, 0 sai);
+  macro nợ khớp `execute/debt.py` tới từng đồng (biz_111: 35 khách nợ ngày 19/08/2026, đúng ví dụ trong slide).
+- **Hệ quả:** mặc định tắt; rule-only dev giữ 2410/0/37. **Chưa có số đo với model thật.** tau và policy chỉ chọn
+  trên train (luật 8) bằng `eval/calibrate_agent.py` (k=8, m=4 tương đương tau 0.5). Image chọn bằng
+  `--build-arg AGENT=sql`, phải chạy `eval/build_fewshot_sql.py` trước khi build. PM quyết có đưa vào bài nộp không,
+  qua cổng D23 như image LLM. Prompt khoảng 27–28k ký tự (ước 9–11k token), vừa `max_model_len` 20480.
+
 ### D25 — Trạng thái ba mức (hợp lệ / không hợp lệ / chưa biết) và đọc chú giải trạng thái trong README (2026-11-11)
 - **Bối cảnh:** ingest trên benchmark E0 (D24): `status_codes` và `status_newword` hỏng 24/24 shop. Giá trị trạng thái
   không có trong từ vựng bị coi là `done` (đơn hợp lệ), nên đơn huỷ/trả bị tính vào doanh thu. Agent nhận đúng bảng đó.

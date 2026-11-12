@@ -41,6 +41,25 @@ PYTHONPATH=src .venv/Scripts/python eval/calibrate_agent.py eval/runs/kaggle_<mo
 
 `THINKING = True` bật thinking mode của Qwen3 (đặt `MAX_TOKENS = 6144`). Khoá replay và tên zip có hậu tố `-think`.
 
+### Agent text-to-SQL (D26)
+
+Trong cell cấu hình: `BRANCH = "feat/sql-agent"` (tới khi merge), `AGENT = "sql"`, `SQL_SAMPLES = 8`. Có thể đặt
+`MAX_TOKENS = 768`: mỗi câu trả lời chỉ gồm vài dòng ghi chú và một câu SQL, ngắn hơn code pandas nhiều. Cell
+`os.environ` tự dựng kho few-shot (`eval/build_fewshot_sql.py`, chỉ shop dev, CPU khoảng 5–8 phút), vì file này bị
+gitignore nên không có trên GitHub. Tên zip có tiền tố `datamate_dev_sql_`.
+
+Đọc kết quả trên CPU: `reexec_agent.py` cần cờ `--sql`, vì nó chạy lại câu trả lời thô (`thinking`, gồm cả lượt sửa)
+trên DuckDB với view hiện tại. Sửa view, macro hoặc cách đổi kết quả SQL thành đáp án thì không cần GPU; đổi
+prompt, hint hoặc kho few-shot thì cần (khoá replay gồm prompt).
+
+```bash
+PYTHONPATH=src .venv/Scripts/python eval/reexec_agent.py eval/runs/kaggle_sql/<run>_dev/trace.jsonl --sql
+PYTHONPATH=src .venv/Scripts/python eval/calibrate_agent.py eval/runs/kaggle_sql/<run>_dev/trace_reexec.jsonl
+```
+
+Với k = 8, dòng `m = 4` của `calibrate_agent.py` chính là tau = 0.5. Kiểm tra hợp lý sau vote (`sql_agent.sanity`)
+không được tính lại ở bước calibrate, nên số thật có thể ít câu sai hơn một chút.
+
 ## Chạy trên public (sinh submission)
 
 Notebook: `scripts/kaggle/datamate_public.ipynb`. Public chỉ dùng để sinh submission (CLAUDE.md luật 1): không mở

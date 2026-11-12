@@ -25,11 +25,17 @@ def make_llm(backend: str | None = None, model: str | None = None, replay: str |
     return LLMParser(be, cfg) if be is not None else None
 
 
-def make_agent(llm, root: Path, rulebook: Path | None = None, enabled: bool | None = None):
-    """Code-gen agent (D20) on the same backend as the LLM parser; None when off or no backend."""
-    cfg = AgentConfig.from_env(**({"enabled": enabled} if enabled is not None else {}))
+def make_agent(llm, root: Path, rulebook: Path | None = None, enabled: bool | None = None, kind: str | None = None):
+    """Code-gen (D20) or text-to-SQL (D26) agent on the same backend as the LLM parser; None when off or no backend."""
+    kw = {"enabled": enabled} if enabled is not None else {}
+    if kind:
+        kw["kind"] = kind
+    cfg = AgentConfig.from_env(**kw)
     if not cfg.enabled or llm is None:
         return None
+    if cfg.kind == "sql":
+        from datamate.agent.sql_agent import SqlAgent  # noqa: PLC0415
+        return SqlAgent(llm.backend, cfg, root, rulebook)
     from datamate.agent.agent import CodeGenAgent  # noqa: PLC0415
     return CodeGenAgent(llm.backend, cfg, root, rulebook)
 
@@ -53,7 +59,8 @@ def main(argv=None) -> int:
     ap.add_argument("--llm", choices=["off", "vllm", "replay"], help="LLM backend (default: $DATAMATE_LLM or off)")
     ap.add_argument("--llm-model", help="local weights dir (default: $DATAMATE_LLM_MODEL)")
     ap.add_argument("--llm-replay", help="replay/record jsonl (default: $DATAMATE_LLM_REPLAY)")
-    ap.add_argument("--agent", choices=["off", "codegen"], help="code-gen agent, D20 (default: $DATAMATE_AGENT or off)")
+    ap.add_argument("--agent", choices=["off", "codegen", "sql"],
+                    help="code-gen (D20) or text-to-SQL (D26) agent (default: $DATAMATE_AGENT or off)")
     args = ap.parse_args(argv)
 
     root = find_root(Path(args.data))
@@ -64,7 +71,8 @@ def main(argv=None) -> int:
     except Exception:  # model failed to load (no GPU, OOM...): run the measured rule-only system, never crash (D14)
         print(f"[datamate] LLM disabled, rule-only run:\n{traceback.format_exc(limit=3)}", file=sys.stderr)
         llm = None
-    agent = make_agent(llm, root, enabled=args.agent == "codegen" if args.agent else None)
+    agent = make_agent(llm, root, enabled=args.agent in ("codegen", "sql") if args.agent else None,
+                       kind=args.agent if args.agent in ("codegen", "sql") else None)
     # D20: with the agent, the rule side stays pure rule (no D14 LLM parser/judge); the model serves the agent only
     ctx = Context(root=root, llm=None if agent else llm, agent=agent)
     with open(root / "questions.jsonl", encoding="utf8") as f:

@@ -52,6 +52,12 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 - [ ] PM: upload tar mới lên Drive + **Test Solution** cho tar mới (HANDOVER mục 4, 12/11)
 - [ ] **[5090]** Build image LLM từ `main` `97aee0b` (PM chốt), tag `zaic2026_datamate_aio_zalo:final`, theo D22 (`docs/GPU_RUNBOOK.md` 6b), `check_image.sh`: giây/câu (giới hạn 6 giờ), AWQ + prefix cache trên sm120, chạy 2 lần lệch ≤ 0.03 (**điều kiện nộp image**, D23; mục tiêu ≤ 0.01). Test Solution #2
 
+- [x] D26: agent text-to-SQL trên view DuckDB (nhánh `feat/sql-agent`, mặc định tắt). CPU: view + macro nợ khớp
+      executor, mẫu SQL khớp gold 1649/1649 câu dev đã thử, 222 test pass, rule-only dev giữ 2410/0/37
+- [ ] **[Kaggle]** Agent SQL trên 72 câu dev (`AGENT = "sql"`, `docs/KAGGLE.md`), so với code-gen một mình 0.653
+      (56/9/7); sau đó holdout chỉ số tổng, so 0.444 (precision 0.776). Luật nhận: precision holdout ≥ 0.85
+- [ ] PM: quyết có build image LLM với `--build-arg AGENT=sql` không (cổng D23, Test Solution trước 15/11 23:59)
+
 **13–15/11**
 - [ ] Sửa theo nhóm lỗi dev/holdout (không theo public, không xem log public — D23), tối ưu tốc độ ≤ 30 s/câu, Test Solution mỗi ngày
 - [ ] **[5090]** Đo lại ngưỡng bằng chính image cuối
