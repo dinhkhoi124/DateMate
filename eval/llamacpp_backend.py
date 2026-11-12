@@ -7,8 +7,11 @@ submitted image uses vLLM and src/ makes no network call (CLAUDE.md rule 6).
 Numbers from this backend are NOT the submission config (other quantisation, other engine): use them to catch
 format/SQL failure modes, never to choose tau, m, policy or prompts (D21: those are measured with vLLM on train).
 
-    llama-server -m Qwen3-14B-Q4_K_M.gguf -ngl 28 -c 28672 --parallel 2 -fa on -ctk q8_0 -ctv q8_0 --jinja
-    PYTHONPATH=src python eval/run_eval.py --split dev --agent sql --llamacpp http://127.0.0.1:8080 --per-shop 1 --trace
+    llama-server -m Qwen3-14B-Q4_K_M.gguf -ngl 24 -c 20480 --parallel 1 -fa on -ctk q8_0 -ctv q8_0 --jinja
+    PYTHONPATH=src python eval/run_eval.py --split dev --agent sql --llamacpp http://127.0.0.1:8080         --llamacpp-workers 1 --per-shop 1 --trace
+
+Context per slot = -c / --parallel must hold the longest prompt (~15k tokens: rulebook + README + schema) plus the
+reply: one slot of 20480 (same as max_model_len of the image) fits an 8 GB laptop GPU with -ngl ~24.
 """
 from __future__ import annotations
 
