@@ -57,6 +57,10 @@ PYTHONPATH=src .venv/Scripts/python eval/reexec_agent.py eval/runs/kaggle_sql/<r
 PYTHONPATH=src .venv/Scripts/python eval/calibrate_agent.py eval/runs/kaggle_sql/<run>_dev/trace_reexec.jsonl
 ```
 
+Chạy trên máy cá nhân bằng llama.cpp (không phải engine của bài nộp, chỉ để bắt lỗi định dạng/SQL): xem docstring
+`eval/llamacpp_backend.py` và cờ `--llamacpp` của `run_eval.py`. Hạn thời gian tổng: đặt `DATAMATE_DEADLINE_S`
+(giây, tính từ lúc tiến trình bắt đầu) thì shop chạy sau mốc đó chỉ dùng đáp án rule.
+
 Với k = 8, dòng `m = 4` của `calibrate_agent.py` chính là tau = 0.5. Kiểm tra hợp lý sau vote (`sql_agent.sanity`)
 không được tính lại ở bước calibrate, nên số thật có thể ít câu sai hơn một chút.
 

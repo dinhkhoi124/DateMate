@@ -54,6 +54,9 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 
 - [x] D26: agent text-to-SQL trên view DuckDB (nhánh `feat/sql-agent`, mặc định tắt). CPU: view + macro nợ khớp
       executor, mẫu SQL khớp gold 1649/1649 câu dev đã thử, 222 test pass, rule-only dev giữ 2410/0/37
+- [x] D26 vòng 2: lớp tồn kho/lô/nhập, cột lọc, cảnh báo khi rulebook đổi, mẫu SQL 46 op (2389/2447 câu dev khớp
+      gold, 0 sai), ngân sách prompt, `DATAMATE_DEADLINE_S`. Rule-only dev 2410/0/37, 229 test pass
+- [ ] Thử agent SQL trên laptop bằng llama.cpp (`--llamacpp`, chỉ bắt lỗi định dạng/SQL, không chọn cấu hình)
 - [ ] **[Kaggle]** Agent SQL trên 72 câu dev (`AGENT = "sql"`, `docs/KAGGLE.md`), so với code-gen một mình 0.653
       (56/9/7); sau đó holdout chỉ số tổng, so 0.444 (precision 0.776). Luật nhận: precision holdout ≥ 0.85
 - [ ] PM: quyết có build image LLM với `--build-arg AGENT=sql` không (cổng D23, Test Solution trước 15/11 23:59)

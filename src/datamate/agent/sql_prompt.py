@@ -42,6 +42,12 @@ Quy tắc SQL:
   Không tự tính lại tuần, tháng, Tết.
 - Lọc sản phẩm/khách/nhóm hàng bằng khoá trong GỢI Ý (product_key, customer_key, category), không tự đoán chuỗi.
 - Công nợ: dùng macro debt_at(DATE 'x'), debt_new(DATE 'a', DATE 'b'), debt_repaid(DATE 'a', DATE 'b') nếu có.
+- Tồn kho, lô, hạn dùng: macro stock_at(DATE 'x') và lots_at(DATE 'x') nếu có. Nhập hàng: v_imports (dòng nhập),
+  v_receipts (phiếu nhập), đã bỏ phiếu huỷ.
+- Lọc theo ca, nhóm khách, kênh: cột shift, customer_group, channel_class (đã gom nhóm sẵn).
+- Đáp án list gồm nhiều số tính riêng: SELECT unnest([biểu thức 1, biểu thức 2, ...]).
+- Đọc phần LƯU Ý cuối SCHEMA: nếu rulebook của bộ dữ liệu này đổi định nghĩa thì áp dụng rulebook, không dùng sẵn
+  cột/macro được nêu.
 - Kết quả: number/percent/date/string/boolean -> đúng 1 dòng 1 cột. list -> 1 cột, mỗi dòng một phần tử, có
   ORDER BY. table -> các cột cần hiển thị, cột đầu là tên đối tượng.
 - Tiền: số nguyên VND, viết ROUND(x) (kể cả trung bình). percent: ROUND(100.0 * phần / tổng, 2), không có ký hiệu %.

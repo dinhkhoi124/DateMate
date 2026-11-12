@@ -147,6 +147,9 @@ class AgentConfig:
     tau: float = 0.5
     repair_turns: int = 1
     fewshot_k: int = 4
+    # prompt budget in characters (~2.5 chars/token for this Vietnamese prompt: 45000 ~ 18k tokens, inside
+    # max_model_len 20480 with the reply); over it examples are dropped, then the question abstains
+    max_prompt_chars: int = 45000
     sanity: bool = True
 
     @classmethod

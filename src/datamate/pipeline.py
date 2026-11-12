@@ -39,6 +39,10 @@ class Context:
     rb: RulebookDiff = None                           # D18 diff of the split's rulebook vs train
     judge: object = None                              # parse.rule_judge.RuleJudge (D18 branch 3), from `llm`
     agent: object = None                              # agent.agent.CodeGenAgent (D20); None = no code-gen
+    # time.monotonic() after which shops not started yet skip the agent and keep the rule answer (run.py,
+    # DATAMATE_DEADLINE_S). None = no deadline (default, unchanged behaviour)
+    deadline: float = None
+    agent_skipped: int = 0                            # questions answered rule-only because of the deadline
 
     def __post_init__(self):
         if self.vocab is None:
@@ -231,7 +235,12 @@ def answer_many(qs: list[dict], ctx: Context):
                 rule.append((abstain(q["id"]), {"thinking": None, "error": traceback.format_exc()}))
             rule_s.append(time.perf_counter() - tr0)
         try:
-            cg = ctx.agent.solve_shop(group, ctx.store(biz))
+            if ctx.deadline is not None and time.monotonic() > ctx.deadline:
+                # time budget spent (6 h incl. model loading): the rest of the split is answered by the rule path
+                ctx.agent_skipped += len(group)
+                cg = [(None, {"vote": "deadline: agent skipped"})] * len(group)
+            else:
+                cg = ctx.agent.solve_shop(group, ctx.store(biz))
         except Exception:  # noqa: BLE001
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)

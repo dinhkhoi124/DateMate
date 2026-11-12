@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import traceback
@@ -14,6 +15,8 @@ from pathlib import Path
 from datamate.config import LLMConfig
 from datamate.config import AgentConfig
 from datamate.pipeline import Context, answer_many
+
+_T0 = time.monotonic()   # process start: the organisers' time limit counts model loading too
 
 
 def make_llm(backend: str | None = None, model: str | None = None, replay: str | None = None):
@@ -75,6 +78,8 @@ def main(argv=None) -> int:
                        kind=args.agent if args.agent in ("codegen", "sql") else None)
     # D20: with the agent, the rule side stays pure rule (no D14 LLM parser/judge); the model serves the agent only
     ctx = Context(root=root, llm=None if agent else llm, agent=agent)
+    if os.environ.get("DATAMATE_DEADLINE_S"):   # after this many seconds from start, remaining shops go rule-only
+        ctx.deadline = _T0 + float(os.environ["DATAMATE_DEADLINE_S"])
     with open(root / "questions.jsonl", encoding="utf8") as f:
         qs = [json.loads(l) for l in f if l.strip()]
     if args.only:
@@ -100,7 +105,7 @@ def main(argv=None) -> int:
     if ctx.judge is not None:
         print(ctx.judge.stats_line(), file=sys.stderr)
     if ctx.agent is not None:
-        print(ctx.agent.stats_line(), file=sys.stderr)
+        print(ctx.agent.stats_line() + f" deadline_skipped={ctx.agent_skipped}", file=sys.stderr)
         ctx.agent.close()
     return 0
 

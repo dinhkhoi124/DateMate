@@ -6,10 +6,13 @@ same as the pandas agent's `T`) plus canonical views built deterministically fro
 - `v_orders`: one row per order (date, time, status, customer key, revenue of the order...).
 - `v_sales`: one row per sold line, already joined with its order and product (qty, qty_base, amount, category...).
 - debt macros `debt_at(day)`, `debt_new(a, b)`, `debt_repaid(a, b)` built from `execute/debt.py`'s definitions.
+- `v_imports` / `v_receipts` (non-cancelled import lines and receipts) and macros `stock_at(day)`, `lots_at(day)`
+  built from `execute/inventory.py` and `dispatch._lot_remaining`.
 
-Rules baked into a view are TRAIN rulebook rules, so each is added only while the split's rulebook keeps the rows it
-relies on (D18 `RulebookDiff.blocked`): `is_valid` (rulebook §1) only when no revenue/valid-sales row changed, debt
-macros (rulebook §4) only when no debt row changed. Otherwise the model applies the split rulebook from the prompt.
+Views carry the TRAIN rulebook reading of each rule and say so in the schema (`is_valid` = status done/shipping...).
+When the split's rulebook changes the rows a view relies on (D18 `RulebookDiff.blocked`), the view stays but the
+schema carries a warning naming it, so the model applies the split rulebook from the prompt on the raw columns
+(status, raw_status...) instead. Dropping the column made every train example unusable on such a split.
 
 Safety: after loading, external access is disabled and the configuration locked; `query` runs one SELECT/WITH
 statement only, with a wall-clock timeout (`con.interrupt()`). One thread: identical inputs give identical results.
@@ -78,9 +81,14 @@ def _date_cols(df: pd.DataFrame) -> set[str]:
 class ShopDB:
     con: object
     tables: dict = field(default_factory=dict)       # name -> (n rows, [(col, doc)])
-    notes: list = field(default_factory=list)        # which canonical objects exist and why (prompt + trace)
-    has_valid: bool = False
+    notes: list = field(default_factory=list)        # warnings shown under the schema (rulebook changed ...)
+    doc: dict = field(default_factory=dict)          # column name -> meaning, for v_orders / v_sales
+    macros: list = field(default_factory=list)       # one schema line per table macro
+    has_valid: bool = False                          # True: the split keeps the train valid-order rule (§1)
     has_debt: bool = False
+    has_stock: bool = False
+    has_lots: bool = False
+    data_end: object = None
 
     def query(self, sql: str, timeout_s: float = 10.0) -> tuple[list[str], list[list]]:
         """Run ONE read-only statement. Returns (columns, rows) with at most MAX_ROWS rows. Raises QueryError."""
@@ -138,7 +146,33 @@ def _customer_names(f) -> dict:
     return f.st.extra["_cust_names"]
 
 
-def _orders_view(f, with_valid: bool) -> pd.DataFrame:
+def _hm(sec: int) -> str:
+    return f"{sec // 3600:02d}:{sec % 3600 // 60:02d}"
+
+
+def _order_extras(f) -> pd.DataFrame:
+    """Order-level filter columns, indexed by order_id: customer_group (rulebook §1: walk-in orders belong to no
+    group), shift (rulebook §2 hours, re-read from the split rulebook by D18), channel_class (ops.channel_class)."""
+    if "_sql_order_extras" in f.st.extra:
+        return f.st.extra["_sql_order_extras"]
+    from datamate.execute.ops import channel_class  # noqa: PLC0415
+    O = f.O
+    x = pd.DataFrame(index=O["order_id"].values)
+    gm = f.customer_groups() if f.caps.get("has_customer_group") else {}
+    if gm:
+        x["customer_group"] = [gm.get(k) if isinstance(k, str) else None for k in O["customer_id"]]
+    tod = pd.to_numeric(O["tod"], errors="coerce").values
+    if f.caps.get("has_time") and (tod == tod).any():
+        (mlo, mhi), (alo, ahi) = f.rules.morning, f.rules.afternoon
+        x["shift"] = np.where((tod >= mlo) & (tod <= mhi), "morning",
+                              np.where((tod >= alo) & (tod <= ahi), "afternoon", None))
+    if f.caps.get("has_channel") and O["channel"].notna().any():
+        x["channel_class"] = [channel_class(c) for c in O["channel"]]
+    f.st.extra["_sql_order_extras"] = x
+    return x
+
+
+def _orders_view(f) -> pd.DataFrame:
     """v_orders: one row per order. revenue = sum of positive line amounts (rulebook §1.6, Facts.rev)."""
     O = f.O
     v = pd.DataFrame({"order_id": O["order_id"], "order_date": O["order_date"]})
@@ -147,11 +181,13 @@ def _orders_view(f, with_valid: bool) -> pd.DataFrame:
     v["status"] = O["status"]
     if "_raw_status" in O and O["_raw_status"].notna().any():
         v["raw_status"] = O["_raw_status"]
-    if with_valid:
-        v["is_valid"] = O["valid"].astype(bool)
+    v["is_valid"] = O["valid"].astype(bool)
     v["customer_key"] = O["ckey"]
     if O["ckey"].notna().any():
         v["customer_name"] = O["ckey"].map(_customer_names(f))
+    ex = _order_extras(f)
+    for c in ex.columns:
+        v[c] = ex[c].values
     for c in ("customer_id", "is_walkin", "channel", "payment_method", "staff_id", "note"):
         if c in O and O[c].notna().any():
             v[c] = O[c]
@@ -162,18 +198,23 @@ def _orders_view(f, with_valid: bool) -> pd.DataFrame:
     return v
 
 
-def _sales_view(f, with_valid: bool) -> pd.DataFrame:
+def _sales_view(f) -> pd.DataFrame:
     """v_sales: one row per order line joined with its order and product (rulebook §1 revenue = Σ amount)."""
     L, O = f.L, f.O.set_index("order_id")
     v = pd.DataFrame({"order_id": L["order_id"], "order_date": L["order_id"].map(O["order_date"])})
     if O["order_dt"].notna().any():
         v["order_time"] = L["order_id"].map(O["order_dt"])
     v["status"] = L["status"]
-    if with_valid:
-        v["is_valid"] = L["valid"].astype(bool)
+    if "_raw_status" in O and O["_raw_status"].notna().any():
+        v["raw_status"] = L["order_id"].map(O["_raw_status"])
+    v["is_valid"] = L["valid"].astype(bool)
     v["customer_key"] = L["order_id"].map(O["ckey"])
     if O["ckey"].notna().any():
         v["customer_name"] = v["customer_key"].map(_customer_names(f))
+    ex = _order_extras(f)
+    ex = ex[~ex.index.duplicated()]
+    for c in ex.columns:
+        v[c] = L["order_id"].map(ex[c])
     for c in ("channel", "payment_method", "staff_id"):
         if c in O and O[c].notna().any():
             v[c] = L["order_id"].map(O[c])
@@ -189,6 +230,12 @@ def _sales_view(f, with_valid: bool) -> pd.DataFrame:
               "cost_unit", "is_fee"):
         if c in L and L[c].notna().any():
             v[c] = L[c]
+    P = f.P
+    if "is_rx" in P and P["is_rx"].notna().any():          # rulebook §6 nhà thuốc
+        rx = P["is_rx"].to_dict()
+        v["is_rx"] = [rx.get(k) is True for k in L["product_key"]]
+    if "active_ingredient" in P and P["active_ingredient"].notna().any():
+        v["active_ingredient"] = L["product_key"].map(P["active_ingredient"].to_dict())
     return v
 
 
@@ -239,8 +286,118 @@ _DEBT_MACROS = [
 ]
 
 
+# ---------------------------------------------------------------------------------- imports, stock, lots (§5, §6)
+
+def _inventory(con, db: ShopDB, f):
+    """v_imports / v_receipts, _items and the macros stock_at(x), lots_at(x): the same definitions as
+    execute/inventory.py (import_lines, receipts, stock_at, lot_stock_at) and dispatch._lot_remaining."""
+    from datamate.execute import inventory as inv  # noqa: PLC0415
+    st = f.st
+    has_imp = False
+    if f.caps.get("has_imports") and st.import_lines is not None:
+        IL = inv.import_lines(f)          # rulebook §5: cancelled receipts dropped, qty_base filled
+        if len(IL):
+            H = inv.receipts(f)
+            sup = H["supplier"].where(H["supplier"].notna(), H.get("supplier_id")) if "supplier" in H else None
+            vi = pd.DataFrame({"receipt_id": IL["receipt_id"], "import_date": IL["import_date"]})
+            if sup is not None and sup.notna().any():
+                vi["supplier"] = IL["receipt_id"].map(dict(zip(H["receipt_id"], sup)))
+            names = {k: f.pname(k) for k in sorted(IL["product_key"].dropna().unique(), key=str)}
+            vi["product_key"] = IL["product_key"]
+            vi["product_name"] = IL["product_key"].map(names)
+            for c in ("unit", "qty", "qty_base", "price", "amount", "lot", "expiry"):
+                if c in IL and IL[c].notna().any():
+                    vi[c] = IL[c]
+            _add(con, db, "v_imports", vi, ["import_date", "receipt_id", "product_key"])
+            vr = pd.DataFrame({"receipt_id": H["receipt_id"], "import_date": H["import_date"]})
+            if sup is not None and sup.notna().any():
+                vr["supplier"] = sup
+            vr["receipt_total"] = pd.to_numeric(H["receipt_total"], errors="coerce")
+            _add(con, db, "v_receipts", vr, ["import_date", "receipt_id"])
+            has_imp = "qty_base" in vi
+    S, LT, LS = st.stock, st.lots, st.lot_sales
+    has_snap = S is not None and len(S) and f.dend is not None
+    has_lots = LT is not None and len(LT) and LS is not None and len(LS)
+    if not has_snap and not has_lots:
+        return
+    keys = set(f.P.index) | (set(S["product_key"].dropna()) if has_snap else set()) | \
+        (set(LT["product_key"].dropna()) if has_lots else set())
+    keys = sorted(keys, key=str)
+    cost = pd.to_numeric(f.P["cost"], errors="coerce").to_dict()
+    items = pd.DataFrame({"product_key": keys, "product_name": [f.pname(k) for k in keys],
+                          "base_unit": [inv.base_unit(f, k) for k in keys], "cost": [cost.get(k) for k in keys]})
+    _add(con, db, "_items", items, ["product_key"], keep_empty=True)
+    lots = None
+    if has_lots:
+        H = st.imports
+        rd = dict(zip(H["receipt_id"], H["import_date"])) if H is not None and len(H) else {}
+        lots = pd.DataFrame({"lot": LT["lot"], "product_key": LT["product_key"],
+                             "expiry": LT["expiry"] if "expiry" in LT else None,
+                             "qty_base": pd.to_numeric(LT["qty_base"], errors="coerce"),
+                             "receipt_date": LT["receipt_id"].map(rd)})
+        O = f.O.set_index("order_id")
+        ls = pd.DataFrame({"lot": LS["lot"], "product_key": LS["lot"].map(dict(zip(LT["lot"], LT["product_key"]))),
+                           "order_date": LS["order_id"].map(O["order_date"]), "status": LS["order_id"].map(O["status"]),
+                           "qty_base": pd.to_numeric(LS["qty_base"], errors="coerce"),
+                           "return_qty_base": pd.to_numeric(LS["return_qty_base"], errors="coerce")})
+        _add(con, db, "_lots", lots, ["lot"], keep_empty=True)
+        _add(con, db, "_lot_sales", ls, ["lot", "order_date"], keep_empty=True)
+        con.execute("ALTER TABLE _lots ALTER receipt_date TYPE DATE")
+        con.execute("ALTER TABLE _lots ALTER expiry TYPE DATE")
+        con.execute("ALTER TABLE _lot_sales ALTER order_date TYPE DATE")
+    X = "CAST(x AS DATE)"
+    if has_snap:        # inventory.stock_at: snapshot at data end rolled back with imports and sales after x
+        end = f"DATE '{f.dend.isoformat()}'"
+        stock = S.groupby("product_key", sort=True)["stock_qty"].sum().reset_index()
+        _add(con, db, "_stock", stock, ["product_key"], keep_empty=True)
+        imp = (f"LEFT JOIN (SELECT product_key, sum(qty_base) AS q FROM v_imports WHERE import_date > {X} "
+               f"AND import_date <= {end} GROUP BY product_key) i USING (product_key)") if has_imp else ""
+        sold = (f"LEFT JOIN (SELECT product_key, sum(qty_base) AS q FROM v_sales WHERE order_date > {X} "
+                f"AND order_date <= {end} AND status <> 'cancelled' AND NOT is_fee GROUP BY product_key) o "
+                "USING (product_key)") if "v_sales" in db.tables else ""
+        expr = "s.stock_qty" + (" - coalesce(i.q, 0)" if imp else "") + (" + coalesce(o.q, 0)" if sold else "")
+        con.execute(f"""CREATE MACRO stock_at(x) AS TABLE
+            SELECT s.product_key, it.product_name, it.base_unit,
+                   CASE WHEN {X} >= {end} THEN s.stock_qty ELSE {expr} END AS stock_qty, it.cost
+            FROM _stock s LEFT JOIN _items it USING (product_key) {imp} {sold}
+            ORDER BY s.product_key""")
+    else:               # inventory.lot_stock_at: lot receipts up to x - lot sales of non-cancelled orders + returns
+        con.execute(f"""CREATE MACRO stock_at(x) AS TABLE
+            SELECT t.product_key, it.product_name, it.base_unit, t.stock_qty, it.cost
+            FROM (SELECT product_key, sum(q) AS stock_qty FROM (
+                    SELECT product_key, coalesce(qty_base, 0) AS q FROM _lots WHERE receipt_date <= {X}
+                    UNION ALL
+                    SELECT product_key, coalesce(return_qty_base, 0) - coalesce(qty_base, 0) FROM _lot_sales
+                    WHERE order_date <= {X} AND status <> 'cancelled') GROUP BY product_key) t
+            LEFT JOIN _items it USING (product_key) WHERE t.product_key IS NOT NULL
+            ORDER BY t.product_key""")
+    db.has_stock = True
+    db.macros.append("stock_at(DATE 'x') -> product_key, product_name, base_unit, stock_qty, cost: tồn kho (đơn vị "
+                     "cơ sở) của từng mặt hàng tại cuối ngày x; cost = giá vốn một đơn vị cơ sở trong danh mục")
+    if lots is not None and lots["expiry"].notna().any():   # dispatch._lot_remaining
+        con.execute(f"""CREATE MACRO lots_at(x) AS TABLE
+            SELECT l.lot, l.product_key, it.product_name, l.expiry, l.qty_base - coalesce(n.net, 0) AS remain
+            FROM _lots l
+            LEFT JOIN (SELECT lot, sum(coalesce(qty_base, 0)) - sum(coalesce(return_qty_base, 0)) AS net
+                       FROM _lot_sales WHERE order_date <= {X} AND status <> 'cancelled' GROUP BY lot) n USING (lot)
+            LEFT JOIN _items it USING (product_key)
+            WHERE (l.receipt_date IS NULL OR l.receipt_date <= {X}) AND l.qty_base - coalesce(n.net, 0) > 0
+            ORDER BY l.expiry, l.lot""")
+        db.has_lots = True
+        db.macros.append("lots_at(DATE 'x') -> lot, product_key, product_name, expiry, remain: các lô còn tồn "
+                         "(remain > 0, đơn vị cơ sở) tại cuối ngày x, kèm hạn dùng")
+
+
+_WARN = (  # (scope entries of rulebook.SCOPES, what the warning names)
+    (("revenue", "order_count"), "đơn hợp lệ/doanh thu (§1): cột is_valid và revenue theo định nghĩa mặc định"),
+    (("debt_total",), "công nợ (§4): macro debt_at, debt_new, debt_repaid theo định nghĩa mặc định"),
+    (("stock_qty", "stock_value"), "tồn kho (§5): macro stock_at theo định nghĩa mặc định"),
+    (("nearest_expiry", "expiring_products"), "lô/hạn dùng (§6): macro lots_at theo định nghĩa mặc định"),
+)
+
+
 def build_db(st, rules, rb=None) -> ShopDB:
-    """DuckDB database of one shop. `rb` = RulebookDiff of the split (None: train rulebook, nothing blocked)."""
+    """DuckDB database of one shop. `rb` = RulebookDiff of the split (None: train rulebook, nothing changed)."""
     import duckdb  # noqa: PLC0415
 
     from datamate.agent.tables import frames_of  # noqa: PLC0415
@@ -254,48 +411,88 @@ def build_db(st, rules, rb=None) -> ShopDB:
         _add(con, db, name, df, ["order_id", "receipt_id", "product_key", "product_id", "customer_id", "date"])
     if st.orders is not None and len(st.orders) and "order_date" in st.orders:
         f = facts_of(st, rules)
-        db.has_valid = not blocked.get("revenue") and not blocked.get("order_count")
-        _add(con, db, "v_orders", _orders_view(f, db.has_valid), ["order_date", "order_id"])
+        db.data_end = f.dend
+        db.has_valid = not any(blocked.get(k) for k in _WARN[0][0])
+        _add(con, db, "v_orders", _orders_view(f), ["order_date", "order_id"])
         if f.has_lines:
-            _add(con, db, "v_sales", _sales_view(f, db.has_valid), ["order_date", "order_id", "product_key"])
-        if not db.has_valid:
-            db.notes.append("is_valid omitted: this rulebook changes the valid-order rule; apply it from status")
-        if not blocked.get("debt_total"):
-            dt = _debt_tables(f)
-            if dt is not None:
-                _add(con, db, "_debt_orders", dt[0], ["order_id"], keep_empty=True)
-                _add(con, db, "_debt_payments", dt[1], ["order_id", "paid_date"], keep_empty=True)
-                for m in _DEBT_MACROS:
-                    con.execute(m)
-                db.has_debt = True
-        else:
-            db.notes.append("debt macros omitted: this rulebook changes the debt rules")
+            _add(con, db, "v_sales", _sales_view(f), ["order_date", "order_id", "product_key"])
+        dt = _debt_tables(f)
+        if dt is not None:
+            _add(con, db, "_debt_orders", dt[0], ["order_id"], keep_empty=True)
+            _add(con, db, "_debt_payments", dt[1], ["order_id", "paid_date"], keep_empty=True)
+            for m in _DEBT_MACROS:
+                con.execute(m)
+            db.has_debt = True
+            db.macros += [
+                "debt_at(DATE 'x') -> order_id, order_date, customer_key, customer_name, total, paid, owe, age_days: "
+                "đơn còn nợ (owe > 0) tính đến hết ngày x; age_days = tuổi nợ tính từ ngày đặt",
+                "debt_new(DATE 'a', DATE 'b') -> order_id, order_date, customer_key, customer_name, new_debt: nợ "
+                "phát sinh của đơn ghi nợ đặt trong [a, b] (phần chưa trả trong ngày mua)",
+                "debt_repaid(DATE 'a', DATE 'b') -> order_id, customer_key, customer_name, paid_date, amount: khoản "
+                "trả nợ có ngày trả trong [a, b] và sau ngày mua"]
+        _inventory(con, db, f)
+        (mlo, mhi), (alo, ahi) = rules.morning, rules.afternoon
+        db.doc = {
+            "revenue": "doanh thu của đơn = tổng thành tiền các dòng (sau giảm giá dòng; chưa trừ giảm giá cả đơn, "
+                       "không gồm phí giao)",
+            "amount": "thành tiền của dòng, sau giảm giá dòng",
+            "qty": "số lượng theo đơn vị bán (unit)",
+            "qty_base": "số lượng quy về đơn vị cơ sở (base_unit)",
+            "is_valid": "true = đơn được tính bán hàng/doanh thu: status 'done' hoặc 'shipping' (không huỷ, không "
+                        "có trả hàng kể cả trả một phần)",
+            "status": "trạng thái đã chuẩn hoá từ raw_status",
+            "customer_key": "khoá khách hàng; NULL = khách lẻ/vãng lai",
+            "is_fee": "true = dòng phí dịch vụ, không phải mặt hàng",
+            "cost_unit": "giá vốn của một đơn vị bán (unit) ghi trên dòng",
+            "shift": f"ca theo giờ đặt: morning {_hm(mlo)}–{_hm(mhi)}, afternoon {_hm(alo)}–{_hm(ahi)}, NULL ngoài ca",
+            "channel_class": "kênh bán đã gom nhóm từ channel",
+            "customer_group": "nhóm khách; NULL với khách lẻ/vãng lai",
+            "order_total": "tổng đơn phải trả (đã trừ giảm giá cả đơn, gồm phí giao)",
+        }
+        have = (True, db.has_debt, db.has_stock, db.has_lots)
+        for (keys, what), flag in zip(_WARN, have):
+            if flag and any(blocked.get(k) for k in keys):
+                db.notes.append(f"RULEBOOK của bộ dữ liệu này có thay đổi ở phần {what}. Đọc kỹ rulebook: nếu định "
+                                "nghĩa khác thì tự tính từ các cột gốc (status, raw_status, bảng gốc) thay vì dùng sẵn.")
     con.execute("SET enable_external_access=false")
     con.execute("SET lock_configuration=true")
     return db
 
 
 def schema_text(db: ShopDB, max_enum: int = 15) -> str:
-    """Compact schema of every table/view: row count and one line per column (type, values or range)."""
+    """Compact schema of every table/view: row count and one line per column (type, values or range, meaning)."""
     out = []
+    if db.data_end is not None:
+        out.append(f"Dữ liệu bán hàng có đến hết ngày {db.data_end}.")
     names = [r[0] for r in db.con.execute(
         "SELECT table_name FROM information_schema.tables WHERE table_schema='main' ORDER BY table_name").fetchall()]
-    canon = [n for n in ("v_orders", "v_sales") if n in names]
-    rest = [n for n in names if n not in canon and not n.startswith("_")]
+    canon = [n for n in ("v_orders", "v_sales", "v_imports", "v_receipts") if n in names]
+    # raw tables that a canonical view or macro already covers: queryable, listed by name only (prompt length:
+    # rulebook + README + schema must stay well inside max_model_len with the repair turn)
+    covered = {"orders": "v_orders", "lines": "v_sales", "import_lines": "v_imports", "imports": "v_receipts",
+               "stock": "stock_at", "lots": "lots_at", "lot_sales": "lots_at"}
+    hidden = [n for n in names if covered.get(n) in names or (covered.get(n) == "stock_at" and db.has_stock)
+              or (covered.get(n) == "lots_at" and db.has_lots)]
+    rest = [n for n in names if n not in canon and n not in hidden and not n.startswith("_")]
+    documented = set()
     for name in canon + rest:
         n = db.con.execute(f'SELECT count(*) FROM "{name}"').fetchone()[0]
         out.append(f"{name}  ({n} dòng)")
         for col, typ in db.con.execute(
                 "SELECT column_name, data_type FROM information_schema.columns WHERE table_name=? "
                 "ORDER BY ordinal_position", [name]).fetchall():
-            out.append(f"  - {col} {typ}: {_col_doc(db, name, col, typ, max_enum)}")
-    if db.has_debt:
-        out.append("debt_at(x)  -> order_id, order_date, customer_key, customer_name, total, paid, owe, age_days: "
-                   "đơn còn nợ (owe > 0) tính đến hết ngày x")
-        out.append("debt_new(a, b) -> order_id, order_date, customer_key, customer_name, new_debt: nợ phát sinh "
-                   "của đơn ghi nợ đặt trong [a, b] (phần chưa trả trong ngày mua)")
-        out.append("debt_repaid(a, b) -> order_id, customer_key, customer_name, paid_date, amount: khoản trả nợ "
-                   "có ngày trả trong [a, b] và sau ngày mua")
+            doc = ""
+            if name in ("v_orders", "v_sales") and col in db.doc and col not in documented:
+                doc, _ = f"  -- {db.doc[col]}", documented.add(col)
+            out.append(f"  - {col} {typ}: {_col_doc(db, name, col, typ, max_enum)}{doc}")
+    if hidden:
+        out.append("Bảng gốc (đã có view/macro chuẩn ở trên, chỉ dùng khi thật cần cột gốc): " + ", ".join(hidden))
+    if db.macros:
+        out.append("MACRO (gọi như bảng: SELECT ... FROM tên_macro(DATE '2026-01-31'))")
+        out += [f"  - {m}" for m in db.macros]
+    if db.notes:
+        out.append("LƯU Ý")
+        out += [f"  - {n}" for n in db.notes]
     return "\n".join(out)
 
 

@@ -198,3 +198,82 @@ def test_agent_unanswerable_needs_flag(store):
     (row, tr), = ag.solve_shop([Q], store)
     assert row is None and "unanswerable->abstain" in tr["vote"]
     ag.close()
+
+
+# ------------------------------------------------------------------------------------------------ round 2 (D26)
+
+STOCK_SHOP, LOT_SHOP = "biz_105", "biz_119"     # dev shops: stock snapshot / lots with expiry
+
+
+@needs_data
+def test_warning_instead_of_dropping_when_rulebook_changes(store):
+    """A split rulebook that changes §1 keeps is_valid (train examples stay usable) but warns in the schema."""
+    from types import SimpleNamespace
+
+    from datamate.agent.sqldb import build_db, schema_text
+    from datamate.config import DEFAULT
+    db = build_db(store, DEFAULT, SimpleNamespace(blocked={"revenue": ["§1.1"]}))
+    assert "is_valid" in {r[0] for r in db.con.execute("DESCRIBE v_orders").fetchall()}
+    assert not db.has_valid and "LƯU Ý" in schema_text(db) and "is_valid" in db.notes[0]
+    db.close()
+    db = build_db(store, DEFAULT)
+    assert db.has_valid and not db.notes
+    db.close()
+
+
+@needs_data
+def test_stock_and_lot_macros_match_executor():
+    """rulebook §5/§6: stock_at / lots_at give what execute/inventory.py and dispatch._lot_remaining compute."""
+    from datamate.agent.sqldb import build_db, schema_text
+    from datamate.config import DEFAULT
+    from datamate.execute import inventory as inv
+    from datamate.execute.dispatch import _lot_remaining
+    from datamate.execute.facts import facts_of
+    from datamate.ingest.store import Store
+    for shop in (STOCK_SHOP, LOT_SHOP):
+        st = Store.build(ROOT / "data" / shop)
+        db, f = build_db(st, DEFAULT), facts_of(st, DEFAULT)
+        assert db.has_stock and "stock_at" in schema_text(db)
+        for x in (f.dend, date(2026, 3, 31)):
+            py = inv.stock_at(f, x)
+            sql = dict(db.con.execute(f"SELECT product_key, stock_qty FROM stock_at(DATE '{x}')").fetchall())
+            assert all(abs(py[k] - v) < 1e-6 for k, v in sql.items()) and len(sql) == py.index.notna().sum()
+            if shop == LOT_SHOP:
+                LT = _lot_remaining(f, x)
+                n, tot = db.con.execute(f"SELECT count(*), sum(remain) FROM lots_at(DATE '{x}')").fetchone()
+                assert n == len(LT) and abs(tot - LT["remain"].sum()) < 1e-6
+        db.close()
+
+
+@needs_data
+def test_filter_columns():
+    """customer_group / shift / channel_class on v_orders and v_sales (rulebook §1, §2 shift hours)."""
+    from datamate.agent.sqldb import build_db
+    from datamate.config import DEFAULT
+    from datamate.ingest.store import Store
+    st = Store.build(ROOT / "data" / "biz_124")
+    db = build_db(st, DEFAULT)
+    for v in ("v_orders", "v_sales"):
+        cols = {r[0] for r in db.con.execute(f"DESCRIBE {v}").fetchall()}
+        assert {"customer_group", "shift", "channel_class"} <= cols
+    assert {r[0] for r in db.con.execute("SELECT DISTINCT shift FROM v_orders").fetchall()} <= {"morning", "afternoon", None}
+    db.close()
+
+
+@needs_data
+def test_deadline_skips_agent(store):
+    from datamate.pipeline import Context, answer_many
+    ag = _agent(Fake([reply("number", GOOD)] * 4))
+    ctx = Context(root=ROOT, agent=ag, deadline=0.0)       # already past: rule answers only
+    out = list(answer_many([Q], ctx))
+    assert ctx.agent_skipped == 1 and ag.backend.calls == [] and out[0][2]["inputs"]["codegen_vote"].startswith("deadline")
+    ag.close()
+
+
+@needs_data
+def test_prompt_budget(store):
+    """Over-budget prompts drop examples first; a prompt still too long abstains alone (not the whole batch)."""
+    ag = _agent(Fake([reply("number", GOOD)] * 4), max_prompt_chars=100)
+    (row, tr), = ag.solve_shop([Q], store)
+    assert row is None and ag.too_long == 1 and ag.backend.calls == []
+    ag.close()

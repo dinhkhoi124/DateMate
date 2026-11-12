@@ -56,7 +56,7 @@ COPY pyproject.toml CLAUDE.md /code/training_code/
 COPY src /code/training_code/src
 COPY analysis /code/training_code/analysis
 COPY eval/scorer.py eval/submit_check.py eval/run_eval.py eval/splits.json eval/gpu_smoke.py eval/__init__.py \
-     eval/calibrate_agent.py eval/reexec_agent.py eval/resubmit_agent.py eval/build_fewshot_sql.py \
+     eval/calibrate_agent.py eval/reexec_agent.py eval/resubmit_agent.py eval/build_fewshot_sql.py eval/sql_templates.py \
      /code/training_code/eval/
 COPY eval/synth /code/training_code/eval/synth
 COPY scripts /code/training_code/scripts

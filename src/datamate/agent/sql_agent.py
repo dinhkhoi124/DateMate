@@ -83,11 +83,11 @@ class SqlAgent:
         self.cal = LunarCalendar.load(str(self.root / "calendar.csv"))
         self.fewshot = FewShot(fewshot or FEWSHOT_PATH)
         self.dbs: dict = {}
-        self.calls = self.failed = self.repaired = 0
+        self.calls = self.failed = self.repaired = self.too_long = 0
 
     def stats_line(self) -> str:
         return (f"sql_agent calls={self.calls} failed={self.failed} repaired={self.repaired} "
-                f"fewshot={len(self.fewshot.rows)}")
+                f"fewshot={len(self.fewshot.rows)} too_long={self.too_long}")
 
     # ---------------------------------------------------------------------------------------------------- per shop
     def _shop(self, biz: str, store):
@@ -114,8 +114,12 @@ class SqlAgent:
     def prompt(self, q: dict, schema: str, readme: str, lk) -> str:
         H = self._helpers(q, lk)
         ex = self.fewshot.pick(q["question"], q["business_id"], self.cfg.fewshot_k)
-        return build_prompt(self.rulebook, readme, schema, q["question"], as_of_line(H.as_of),
-                            question_hints(q["question"], H), ex)
+        args = (self.rulebook, readme, schema, q["question"], as_of_line(H.as_of), question_hints(q["question"], H))
+        p = build_prompt(*args, ex)
+        while len(p) > self.cfg.max_prompt_chars and ex:   # long README/schema: fewer examples, never a cut rulebook
+            ex = ex[:-1]
+            p = build_prompt(*args, ex)
+        return p
 
     def solve_shop(self, qs: list[dict], store) -> list[tuple[dict | None, dict]]:
         if not qs:
@@ -125,7 +129,14 @@ class SqlAgent:
         prompts = [self.prompt(q, schema, readme, lk) for q in qs]
         t1 = time.perf_counter()
         k = self.cfg.sql_samples
-        outs = self.backend.complete(prompts, k, free=True, max_tokens=self.cfg.max_tokens)
+        # a prompt over budget even without examples is not sent: vLLM rejects an over-long prompt for the whole
+        # batch, which would cost every question of the shop; that question alone abstains
+        ok = [i for i, p in enumerate(prompts) if len(p) <= self.cfg.max_prompt_chars]
+        got = self.backend.complete([prompts[i] for i in ok], k, free=True, max_tokens=self.cfg.max_tokens) if ok else []
+        outs = [[] for _ in prompts]
+        for i, o in zip(ok, got):
+            outs[i] = list(o)
+        self.too_long += len(prompts) - len(ok)
         t2 = time.perf_counter()
         self.calls += len(qs)
         # run every sample; collect failed ones for one batched repair turn per shop

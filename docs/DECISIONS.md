@@ -12,9 +12,14 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   từ data layer và prompt. Lỗi chính của agent pandas là sai ngữ nghĩa khi tự ghép bảng và tự lọc đơn (27% mẫu).
 - **Lựa chọn:** đường agent thứ hai `DATAMATE_AGENT=sql` (`--agent sql`), cùng giao diện và trace với D20:
   1. `agent/sqldb.py`: mỗi shop một DuckDB in-memory. Bảng Store như `T`, cộng view `v_orders`, `v_sales` dựng từ
-     `execute/facts.py`, và macro nợ `debt_at`, `debt_new`, `debt_repaid` dựng từ `execute/debt.py`. Luật train trong view
-     chỉ có khi rulebook của split giữ nguyên các dòng liên quan (D18 `blocked`): `is_valid` (§1), macro nợ (§4).
-     Khoá cấu hình sau khi nạp, chỉ cho một câu SELECT, có timeout, một luồng.
+     `execute/facts.py`, macro nợ `debt_at`, `debt_new`, `debt_repaid` (`execute/debt.py`), `v_imports`, `v_receipts`
+     và macro `stock_at`, `lots_at` (`execute/inventory.py`, `dispatch._lot_remaining`). View có cột lọc
+     `customer_group`, `shift` (giờ ca đọc từ rulebook của split), `channel_class`, `is_rx`, `active_ingredient`;
+     schema có chú thích nghĩa cột chính và ngày cuối của dữ liệu. Khi rulebook của split đổi các dòng mà một view
+     dựa vào (D18 `blocked`), view **vẫn giữ** nhưng schema có mục LƯU Ý nêu tên nó, để model áp rulebook trên cột
+     gốc. (Bản đầu bỏ hẳn `is_valid` trong trường hợp này; như vậy mọi ví dụ train dùng `is_valid` đều thành SQL
+     lỗi đúng trên split cần điểm nhất, nên đã đổi.) Khoá cấu hình sau khi nạp, chỉ cho một câu SELECT, có timeout,
+     một luồng.
   2. `agent/hints.py`: hint tính bằng code: khoảng ngày (timeparse, đã cắt đến hôm nay như `ops.clip`), tiền viết tắt
      (`3tr7`), khoá thực thể (linker). Hint chỉ là đầu vào, không chứa đáp án.
   3. `agent/sql_prompt.py`: rulebook + README + schema + 4 ví dụ + hint; đầu ra `Notes` → `TYPE` → một khối SQL.
@@ -23,12 +28,16 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   5. `agent/sql_agent.py`: k=8 mẫu, một lượt sửa khi SQL lỗi, kết quả rỗng không được bỏ phiếu, trả lời khi share
      ≥ tau = 0.5, unanswerable của model → abstain (luật 5), kiểm tra hợp lý sau vote.
 - **Lý do:** DuckDB tính, model chỉ chọn phép tính (luật 4). Ngữ nghĩa rulebook nằm trong view đã kiểm, model không phải
-  tự lọc đơn hay ghép bảng. Đo trên CPU: mẫu SQL trên view khớp gold **1649/1649** câu dev đã thử (14 op, 0 sai);
-  macro nợ khớp `execute/debt.py` tới từng đồng (biz_111: 35 khách nợ ngày 19/08/2026, đúng ví dụ trong slide).
+  tự lọc đơn hay ghép bảng. Đo trên CPU: mẫu SQL trên view (`eval/sql_templates.py`) khớp gold **2300+/2447** câu
+  dev (0 sai; số chính xác ở `EXPERIMENTS.md`), phủ 46 op gồm tồn kho, lô, nhập hàng, lãi, giao hàng; macro nợ,
+  `stock_at`, `lots_at` khớp executor tới từng đơn vị (biz_111: 35 khách nợ ngày 19/08/2026, đúng ví dụ trong slide).
 - **Hệ quả:** mặc định tắt; rule-only dev giữ 2410/0/37. **Chưa có số đo với model thật.** tau và policy chỉ chọn
   trên train (luật 8) bằng `eval/calibrate_agent.py` (k=8, m=4 tương đương tau 0.5). Image chọn bằng
   `--build-arg AGENT=sql`, phải chạy `eval/build_fewshot_sql.py` trước khi build. PM quyết có đưa vào bài nộp không,
   qua cổng D23 như image LLM. Prompt khoảng 27–28k ký tự (ước 9–11k token), vừa `max_model_len` 20480.
+  `DATAMATE_DEADLINE_S` (mặc định tắt, chưa đặt trong image): quá số giây tính từ lúc tiến trình bắt đầu thì các shop
+  chưa chạy chỉ dùng đáp án rule, để không vượt giới hạn 6 giờ. PM quyết có bật trong image không (ví dụ 19800 =
+  5 giờ 30 phút).
 
 ### D25 — Trạng thái ba mức (hợp lệ / không hợp lệ / chưa biết) và đọc chú giải trạng thái trong README (2026-11-11)
 - **Bối cảnh:** ingest trên benchmark E0 (D24): `status_codes` và `status_newword` hỏng 24/24 shop. Giá trị trạng thái
