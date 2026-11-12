@@ -88,12 +88,38 @@ def reexec_sql(recs: list[dict], qs: dict, root: Path) -> int:
     return changed
 
 
-def sql_vote(r: dict, q: dict, m: int, allow_unans: bool) -> dict | None:
-    """revote() plus the SQL agent's post-vote sanity checks (agent/sql_agent.sanity)."""
+class SqlFinal:
+    """Post-vote steps of agent/sql_agent.SqlAgent on recorded outputs: sanity checks, then 'unanswerable' when every
+    time window of the question lies outside the shop's data (SqlAgent.outside_data). One Store per shop."""
+
+    def __init__(self, root: Path):
+        from datamate.agent.sql_agent import SqlAgent  # noqa: PLC0415
+        self.root, self.stores = root, {}
+        self.agent = SqlAgent(None, AgentConfig(enabled=True, kind="sql"), root)
+
+    def store(self, biz: str):
+        from datamate.ingest.store import Store  # noqa: PLC0415
+        if biz not in self.stores:
+            try:
+                self.stores[biz] = Store.build(self.root / "data" / biz)
+            except Exception:  # noqa: BLE001
+                self.stores[biz] = None
+        return self.stores[biz]
+
+    def close(self):
+        self.agent.close()
+
+
+def sql_vote(r: dict, q: dict, m: int, allow_unans: bool, final: SqlFinal | None = None) -> dict | None:
+    """revote() plus the SQL agent's post-vote steps (agent/sql_agent: sanity, outside_data)."""
     from datamate.agent.sql_agent import sanity  # noqa: PLC0415
     from datamate.normalize.text import normalize  # noqa: PLC0415
     row = revote(r.get("output") or [], m, allow_unans)
-    return None if row is not None and sanity(row, normalize(q["question"])) else row
+    if row is not None and sanity(row, normalize(q["question"])):
+        row = None
+    if row is None and final is not None:
+        row, _ = final.agent.outside_data(q, final.store(q["business_id"]), None, {"output": r.get("output")})
+    return row
 
 
 def main():
@@ -139,6 +165,7 @@ def main():
     print("samples: " + "  ".join(f"{s}={n} ({100 * n / tot:.0f}%)" for s, n in status.most_common()))
 
     src, types = Counter(), Counter()
+    final = SqlFinal(root) if args.sql else None
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf8", newline="\n") as f:
@@ -148,12 +175,14 @@ def main():
                 row, s = {"id": qid, "type": "abstain"}, "missing"
             else:
                 rule = {"id": qid, **((r.get("inputs") or {}).get("rule_answer") or {"type": "abstain"})}
-                cg = sql_vote(r, qs[qid], args.m, args.unanswerable) if args.sql else \
+                cg = sql_vote(r, qs[qid], args.m, args.unanswerable, final) if args.sql else \
                     revote(r.get("output") or [], args.m, args.unanswerable)
                 row, s = combine(rule, cg, args.policy)
             src[s] += 1
             types[row["type"]] += 1
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    if final is not None:
+        final.close()
     mode = "experiment" if args.experiment else "official"
     print(f"{mode}{' sql' if args.sql else ''}: policy={args.policy} m={args.m} "
           f"unanswerable={'on' if args.unanswerable else 'off'}")

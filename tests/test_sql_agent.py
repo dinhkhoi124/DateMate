@@ -287,3 +287,67 @@ def test_resubmit_sql_vote_applies_sanity():
     assert sql_vote(r, {"question": "có bao nhiêu đơn hàng"}, 4, False) is None          # count not an integer
     assert sql_vote(r, {"question": "giá trung bình bao nhiêu"}, 4, False)["answer"] == 2.5
     assert sql_vote(r, {"question": "giá trung bình bao nhiêu"}, 5, False) is None        # 4/8 < 5
+
+
+# ------------------------------------------------------------------------------------------------ v2 (D26, 13/11)
+
+DELIVERY_SHOPS = ("biz_115", "biz_116", "biz_118")      # dev shops with a deliveries table
+
+
+@needs_data
+def test_v_deliveries_counts_rounds_like_the_executor():
+    """rulebook §6 VLXD: one row of v_deliveries per round, so COUNT(*) over a month = dispatch.h_delivery_count."""
+    from types import SimpleNamespace
+
+    from datamate.agent.sqldb import build_db, schema_text
+    from datamate.config import DEFAULT
+    from datamate.execute.dispatch import h_delivery_count
+    from datamate.execute.facts import facts_of
+    from datamate.ingest.store import Store
+    from datamate.timeparse.periods import Period
+    for shop in DELIVERY_SHOPS:
+        st = Store.build(ROOT / "data" / shop)
+        db, f = build_db(st, DEFAULT), facts_of(st, DEFAULT)
+        sch = schema_text(db)
+        assert "v_deliveries" in sch and "deliveries" in sch.split("Bảng gốc")[-1]   # raw table listed by name only
+        e = f.dend
+        for s in (date(e.year, e.month, 1), date(e.year, 1, 1)):
+            it = SimpleNamespace(periods=[Period(s, e, "range")])
+            want = h_delivery_count(it, f, e)[1]
+            got = db.con.execute(f"SELECT COUNT(*) FROM v_deliveries WHERE delivery_date BETWEEN DATE '{s}' "
+                                 f"AND DATE '{e}'").fetchone()[0]
+            assert got == want > 0, (shop, s)
+        db.close()
+
+
+@needs_data
+def test_period_outside_data_turns_abstain_into_unanswerable(store):
+    """CLAUDE.md rule 5: unanswerable only on a deterministic ground: every window outside the data (ops.clip)."""
+    empty = reply("percent", "SELECT NULL")
+    before = {**Q, "id": "t2", "question": "tháng 2/2020 có bao nhiêu đơn", "as_of_date": "2026-08-24"}
+    ag = _agent(Fake([empty] * 4))
+    (row, tr), = ag.solve_shop([before], store)
+    assert row == {"type": "unanswerable", "reason": "period before data"} and "->unanswerable" in tr["vote"]
+    ag.close()
+    # a window inside the data with empty samples stays an abstain
+    ag = _agent(Fake([empty] * 4))
+    (row, tr), = ag.solve_shop([Q], store)
+    assert row is None
+    ag.close()
+    # a concrete minority answer is not overridden either (the guard only replaces 'no answer at all')
+    ag = _agent(Fake([reply("number", "SELECT 3")] + [empty] * 3))
+    (row, tr), = ag.solve_shop([before], store)
+    assert row is None
+    ag.close()
+
+
+@needs_data
+def test_resubmit_sql_vote_applies_outside_data():
+    """eval/resubmit_agent.py --sql gives the same final answer as the agent at run time."""
+    from eval.resubmit_agent import SqlFinal, sql_vote
+    final = SqlFinal(ROOT)
+    q = {"id": "t2", "business_id": SHOP, "question": "tháng 2/2020 có bao nhiêu đơn", "as_of_date": "2026-08-24"}
+    r = {"output": [{"status": "empty", "result": "NULL value"}] * 8}
+    assert sql_vote(r, q, 4, False, final) == {"type": "unanswerable", "reason": "period before data"}
+    assert sql_vote(r, {**q, "question": "tháng 5/2026 có bao nhiêu đơn"}, 4, False, final) is None
+    final.close()

@@ -38,6 +38,20 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
   `DATAMATE_DEADLINE_S` (mặc định tắt, chưa đặt trong image): quá số giây tính từ lúc tiến trình bắt đầu thì các shop
   chưa chạy chỉ dùng đáp án rule, để không vượt giới hạn 6 giờ. PM quyết có bật trong image không (ví dụ 19800 =
   5 giờ 30 phút).
+- **Số đo đầu tiên (13/11, Kaggle `sql1`, commit `4af1884`, Qwen3-14B-AWQ, T4×2, k=8):** trên 72 câu dev (cùng tập
+  code-gen v3), SQL một mình m=4 đạt **69/1/2, PA 0.944, precision 0.986**; code-gen một mình là 0.653. 95% mẫu
+  chạy được, 58/72 câu có 8/8 mẫu đồng ý. Thời gian khoảng 145 giây/câu trên T4 (prefix cache tắt, 3 câu/lượt).
+  Few-shot lấy từ shop dev khác có cùng mẫu câu hỏi, nên số dev lạc quan; quyết định dựa vào holdout và bench B.
+- **Sửa v2 (13/11), theo ba câu dev chưa đúng:**
+  1. View `v_deliveries`: mỗi đợt giao một dòng, khoá giống `dispatch.h_delivery_count`. Bảng gốc `deliveries`
+     mỗi dòng là một mặt hàng; cả 8 mẫu cùng `COUNT(*)` trên bảng gốc nên sai đồng thuận (664 thay vì 290).
+  2. Chú thích cột `is_rx` (chỉ lọc khi câu hỏi nói kê đơn) và `active_ingredient`: 7/8 mẫu tự thêm `is_rx` nên ra
+     kết quả rỗng.
+  3. Kỳ hỏi nằm ngoài dữ liệu → `unanswerable` tất định (`sql_agent.period_outside_data`, cùng phép kiểm
+     `ops.clip` của rule). Chỉ áp dụng khi không mẫu nào ra đáp án cụ thể. `resubmit_agent.py --sql` và
+     `sql_report.py` dùng cùng bước này, nên bản gộp shard khớp lúc chạy.
+
+  Sửa 1 và 2 đổi prompt, cần GPU để đo. Sửa 3 đo lại trên CPU: dev 70/1/1 (PA 0.958).
 
 ### D25 — Trạng thái ba mức (hợp lệ / không hợp lệ / chưa biết) và đọc chú giải trạng thái trong README (2026-11-11)
 - **Bối cảnh:** ingest trên benchmark E0 (D24): `status_codes` và `status_newword` hỏng 24/24 shop. Giá trị trạng thái

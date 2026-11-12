@@ -388,6 +388,30 @@ def _inventory(con, db: ShopDB, f):
                          "(remain > 0, đơn vị cơ sở) tại cuối ngày x, kèm hạn dùng")
 
 
+def _deliveries_view(st) -> pd.DataFrame | None:
+    """rulebook §6 VLXD: one row per delivery round, as execute/dispatch.h_delivery_count counts them: the key is
+    (order_id, delivery_no), or (order_id, delivery_date) when the shop records no round number. The raw table has
+    one row per delivered item, so COUNT(*) on it over-counts rounds."""
+    D = st.deliveries
+    if D is None or not len(D) or "order_id" not in D or "delivery_date" not in D:
+        return None
+    D = D[D["delivery_date"].map(lambda d: d is not None and d == d)].copy()
+    if not len(D):
+        return None
+    by_no = "delivery_no" in D and D["delivery_no"].notna().any()
+    D["_k"] = D["delivery_no"].astype(str) if by_no else D["delivery_date"].astype(str)
+    agg = {"delivery_date": ("delivery_date", "min"), "n_items": ("order_id", "size")}
+    if by_no:
+        agg["delivery_no"] = ("delivery_no", "first")
+    for c, how in (("qty_base", "sum"), ("plate", "first"), ("driver", "first")):
+        if c in D and D[c].notna().any():
+            agg[c] = (c, how)
+    V = D.groupby(["order_id", "_k"], sort=True, dropna=False).agg(**agg).reset_index().drop(columns="_k")
+    cols = ["order_id"] + [c for c in ("delivery_no", "delivery_date", "n_items", "qty_base", "plate", "driver")
+                           if c in V]
+    return V[cols]
+
+
 _WARN = (  # (scope entries of rulebook.SCOPES, what the warning names)
     (("revenue", "order_count"), "đơn hợp lệ/doanh thu (§1): cột is_valid và revenue theo định nghĩa mặc định"),
     (("debt_total",), "công nợ (§4): macro debt_at, debt_new, debt_repaid theo định nghĩa mặc định"),
@@ -431,6 +455,9 @@ def build_db(st, rules, rb=None) -> ShopDB:
                 "debt_repaid(DATE 'a', DATE 'b') -> order_id, customer_key, customer_name, paid_date, amount: khoản "
                 "trả nợ có ngày trả trong [a, b] và sau ngày mua"]
         _inventory(con, db, f)
+        dv = _deliveries_view(st)
+        if dv is not None:
+            _add(con, db, "v_deliveries", dv, ["delivery_date", "order_id", "delivery_no"])
         (mlo, mhi), (alo, ahi) = rules.morning, rules.afternoon
         db.doc = {
             "revenue": "doanh thu của đơn = tổng thành tiền các dòng (sau giảm giá dòng; chưa trừ giảm giá cả đơn, "
@@ -448,6 +475,9 @@ def build_db(st, rules, rb=None) -> ShopDB:
             "channel_class": "kênh bán đã gom nhóm từ channel",
             "customer_group": "nhóm khách; NULL với khách lẻ/vãng lai",
             "order_total": "tổng đơn phải trả (đã trừ giảm giá cả đơn, gồm phí giao)",
+            "is_rx": "true = thuốc kê đơn; chỉ lọc cột này khi câu hỏi nói rõ kê đơn / không kê đơn",
+            "active_ingredient": "hoạt chất của thuốc; lọc bằng đúng giá trị trong GỢI Ý",
+            "n_items": "số dòng mặt hàng trong đợt giao",
         }
         have = (True, db.has_debt, db.has_stock, db.has_lots)
         for (keys, what), flag in zip(_WARN, have):
@@ -466,11 +496,11 @@ def schema_text(db: ShopDB, max_enum: int = 15) -> str:
         out.append(f"Dữ liệu bán hàng có đến hết ngày {db.data_end}.")
     names = [r[0] for r in db.con.execute(
         "SELECT table_name FROM information_schema.tables WHERE table_schema='main' ORDER BY table_name").fetchall()]
-    canon = [n for n in ("v_orders", "v_sales", "v_imports", "v_receipts") if n in names]
+    canon = [n for n in ("v_orders", "v_sales", "v_imports", "v_receipts", "v_deliveries") if n in names]
     # raw tables that a canonical view or macro already covers: queryable, listed by name only (prompt length:
     # rulebook + README + schema must stay well inside max_model_len with the repair turn)
     covered = {"orders": "v_orders", "lines": "v_sales", "import_lines": "v_imports", "imports": "v_receipts",
-               "stock": "stock_at", "lots": "lots_at", "lot_sales": "lots_at"}
+               "stock": "stock_at", "lots": "lots_at", "lot_sales": "lots_at", "deliveries": "v_deliveries"}
     hidden = [n for n in names if covered.get(n) in names or (covered.get(n) == "stock_at" and db.has_stock)
               or (covered.get(n) == "lots_at" and db.has_lots)]
     rest = [n for n in names if n not in canon and n not in hidden and not n.startswith("_")]
@@ -482,7 +512,7 @@ def schema_text(db: ShopDB, max_enum: int = 15) -> str:
                 "SELECT column_name, data_type FROM information_schema.columns WHERE table_name=? "
                 "ORDER BY ordinal_position", [name]).fetchall():
             doc = ""
-            if name in ("v_orders", "v_sales") and col in db.doc and col not in documented:
+            if name in ("v_orders", "v_sales", "v_deliveries") and col in db.doc and col not in documented:
                 doc, _ = f"  -- {db.doc[col]}", documented.add(col)
             out.append(f"  - {col} {typ}: {_col_doc(db, name, col, typ, max_enum)}{doc}")
     if hidden:

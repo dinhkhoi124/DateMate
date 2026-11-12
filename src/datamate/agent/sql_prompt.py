@@ -44,6 +44,7 @@ Quy tắc SQL:
 - Công nợ: dùng macro debt_at(DATE 'x'), debt_new(DATE 'a', DATE 'b'), debt_repaid(DATE 'a', DATE 'b') nếu có.
 - Tồn kho, lô, hạn dùng: macro stock_at(DATE 'x') và lots_at(DATE 'x') nếu có. Nhập hàng: v_imports (dòng nhập),
   v_receipts (phiếu nhập), đã bỏ phiếu huỷ.
+- Đợt giao hàng: v_deliveries (một dòng là một đợt giao, đã gộp các mặt hàng của đợt), đếm bằng COUNT(*).
 - Lọc theo ca, nhóm khách, kênh: cột shift, customer_group, channel_class (đã gom nhóm sẵn).
 - Đáp án list gồm nhiều số tính riêng: SELECT unnest([biểu thức 1, biểu thức 2, ...]).
 - Đọc phần LƯU Ý cuối SCHEMA: nếu rulebook của bộ dữ liệu này đổi định nghĩa thì áp dụng rulebook, không dùng sẵn

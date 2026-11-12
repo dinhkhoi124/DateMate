@@ -57,8 +57,13 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 - [x] D26 vòng 2: lớp tồn kho/lô/nhập, cột lọc, cảnh báo khi rulebook đổi, mẫu SQL 46 op (2389/2447 câu dev khớp
       gold, 0 sai), ngân sách prompt, `DATAMATE_DEADLINE_S`. Rule-only dev 2410/0/37, 229 test pass
 - [ ] Thử agent SQL trên laptop bằng llama.cpp (`--llamacpp`, chỉ bắt lỗi định dạng/SQL, không chọn cấu hình)
-- [ ] **[Kaggle]** Agent SQL trên 72 câu dev (`AGENT = "sql"`, `docs/KAGGLE.md`), so với code-gen một mình 0.653
-      (56/9/7); sau đó holdout chỉ số tổng, so 0.444 (precision 0.776). Luật nhận: precision holdout ≥ 0.85
+- [x] **[Kaggle]** Agent SQL trên 72 câu dev (`sql1`): SQL một mình **0.944** (69/1/2, prec 0.986), code-gen 0.653
+- [x] Sửa v2 theo 3 câu dev chưa đúng: `v_deliveries`, chú thích `is_rx`, kỳ ngoài dữ liệu → unanswerable
+      (reexec dev 0.958, 70/1/1)
+- [ ] **[Kaggle] một vòng v2**: holdout 72 câu (chỉ số tổng, so 0.444, luật nhận precision ≥ 0.85), bench side B
+      (`RUN_BENCH`), dev 72 câu (kiểm v2 không tụt)
+- [ ] Chọn k/m một lần trên dev + holdout + bench B (giả lập k ∈ {4, 6, 8} từ trace k=8), ghi D27, bảng 3 cổng D23
+      cho PM trước **14/11 12:00**
 - [x] Công cụ đọc kết quả SQL: `eval/sql_report.py` (theo op, lớp lỗi DuckDB, giây/câu, `--compare` với code-gen);
       `bench.py run --agent sql`, `bench.py regold` (18/18 gold recomputed); notebook dev in tiến độ mỗi phút và có
       `RUN_BENCH`. A-2: benchmark ingest tái lập khớp BENCHMARK §7 (0 variants differ)

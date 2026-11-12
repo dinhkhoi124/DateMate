@@ -549,12 +549,11 @@ def t_net_profit(it, a):
 
 
 def t_delivery_count(it, a):
-    need("deliveries", "order_id", "delivery_date")
+    need("v_deliveries", "order_id", "delivery_date")
     p = main_period(it)
-    key = "delivery_no" if "delivery_no" in cols("deliveries") else "delivery_date"
-    return "number", [per(p) + " (theo ngày giao)", f"mỗi đợt giao của mỗi đơn là một đợt: đếm cặp (order_id, {key}) "
-                      "khác nhau, kể cả đơn sau đó trả hàng (rulebook §6)"], \
-        f"SELECT COUNT(DISTINCT (order_id, {key})) FROM deliveries WHERE {between('delivery_date', p)}"
+    return "number", [per(p) + " (theo ngày giao)", "mỗi đợt giao của mỗi đơn là một đợt (v_deliveries: một dòng một "
+                      "đợt), kể cả đơn sau đó trả hàng (rulebook §6)"], \
+        f"SELECT COUNT(*) FROM v_deliveries WHERE {between('delivery_date', p)}"
 
 
 # ---- imports, stock, lots (rulebook §5, §6)

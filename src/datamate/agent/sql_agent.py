@@ -71,6 +71,32 @@ def sanity(row: dict, qn: str) -> str | None:
     return None
 
 
+def period_outside_data(q: dict, f, cal, rules) -> str | None:
+    """Deterministic ground for 'unanswerable' (CLAUDE.md rule 5, rulebook §7): every time window of the question
+    lies outside the shop's data, by the same guard as the rule executor (execute/ops.clip). None when the question
+    names no window or one window overlaps the data."""
+    from datamate.execute.ops import Unanswerable, clip  # noqa: PLC0415
+    from datamate.timeparse.periods import find_periods  # noqa: PLC0415
+    if f is None or f.dmin is None:
+        return None
+    as_of = date.fromisoformat(q["as_of_date"])
+    ps = [p for p in find_periods(normalize(q["question"]), as_of, cal, rules) if p.kind != "asof"]
+    why = None
+    for p in ps:
+        try:
+            clip(f, p.start, p.end, as_of)
+            return None
+        except Unanswerable as e:
+            why = str(e)
+    return why
+
+
+def no_concrete_sample(output: list[dict]) -> bool:
+    """No sample ran to an answer other than 'unanswerable' (all empty / error / no SQL / model unanswerable)."""
+    return not any(o.get("status") == "ok" and isinstance(o.get("result"), dict)
+                   and o["result"].get("type") not in ("unanswerable", "abstain") for o in output or [])
+
+
 class SqlAgent:
     def __init__(self, backend, cfg: AgentConfig, root: Path, rulebook: Path | None = None, fewshot: Path | None = None):
         from datamate.rulebook import analyse  # noqa: PLC0415
@@ -163,10 +189,29 @@ class SqlAgent:
         res = []
         for q, raw, rs in zip(qs, outs, runs):
             row, trace = self._vote(q, raw, rs, k)
+            if row is None:
+                row, trace = self.outside_data(q, store, row, trace)
             trace["timing"] = {"prompt_s": (t1 - t0) / len(qs), "gen_batch_s": t2 - t1, "batch_n": len(qs),
                                "exec_s": (t3 - t2) / len(qs), "repair_batch_s": t4 - t3}
             res.append((row, trace))
         return res
+
+    def outside_data(self, q: dict, store, row: dict | None, trace: dict) -> tuple[dict | None, dict]:
+        """An abstained question whose samples produced no concrete answer and whose every time window lies outside
+        the data -> 'unanswerable' (deterministic, so also when the model's own 'unanswerable' is not trusted).
+        Also used by the offline tools (eval/resubmit_agent.py --sql, eval/sql_report.py) on recorded outputs."""
+        if row is not None or store is None or not no_concrete_sample(trace.get("output")):
+            return row, trace
+        from datamate.execute.facts import facts_of  # noqa: PLC0415
+        try:
+            f = facts_of(store, self.rules) if store.orders is not None and len(store.orders) else None
+            why = period_outside_data(q, f, self.cal, self.rules)
+        except Exception:  # noqa: BLE001  (the guard only ever turns an abstain into unanswerable)
+            why = None
+        if why is None:
+            return row, trace
+        trace["vote"] = f"{trace.get('vote', '')} {why}->unanswerable".strip()
+        return {"type": "unanswerable", "reason": why}, trace
 
     def rerun(self, db, raw_reply: str) -> tuple[str, dict | None, str | None, str | None]:
         """Re-execute a recorded reply (eval/reexec_agent.py --sql): the original first, the repair if it fails."""

@@ -52,13 +52,16 @@ def err_class(text) -> str:
     return "other"
 
 
-def sql_answer(t: dict, m: int, cfg: AgentConfig) -> dict | None:
-    """Official SQL vote: share >= tau of k, unanswerable per config, then the post-vote sanity checks."""
+def sql_answer(t: dict, m: int, cfg: AgentConfig, final=None) -> dict | None:
+    """Official SQL vote: share >= tau of k, unanswerable per config, then the agent's post-vote steps (sanity
+    checks; 'unanswerable' when every time window lies outside the data, with `final` = resubmit_agent.SqlFinal)."""
     from datamate.agent.sql_agent import sanity  # noqa: PLC0415
     from datamate.normalize.text import normalize  # noqa: PLC0415
     row = revote(t.get("output") or [], m, cfg.allow_unanswerable)
-    if row is not None and cfg.sanity and t.get("_q") and sanity(row, normalize(t["_q"])):
-        return None
+    if row is not None and cfg.sanity and t.get("_q") and sanity(row, normalize(t["_q"]["question"])):
+        row = None
+    if row is None and final is not None and t.get("_q"):
+        row, _ = final.agent.outside_data(t["_q"], final.store(t["business_id"]), None, {"output": t.get("output")})
     return row
 
 
@@ -95,7 +98,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("trace")
     ap.add_argument("--answers", default=str(ROOT / "data" / "train" / "train" / "answers.jsonl"))
-    ap.add_argument("--questions", default=str(ROOT / "data" / "train" / "train" / "questions.jsonl"))
+    ap.add_argument("--data", default=str(ROOT / "data" / "train" / "train"),
+                    help="split dir (questions.jsonl, data/, rulebook.md) for the out-of-data check")
     ap.add_argument("--compare", help="code-gen trace on the same questions (e.g. Kaggle v3 dev)")
     ap.add_argument("--totals-only", action="store_true", help="holdout: totals and timing only")
     ap.add_argument("--n-private", type=int, default=500, help="question count for the time estimate")
@@ -104,20 +108,22 @@ def main():
 
     cfg = AgentConfig()   # committed defaults (D21), deliberately not from_env()
     golds = {g["id"]: g for g in load_jsonl(args.answers)}
-    qtext = {q["id"]: q["question"] for q in load_jsonl(args.questions)}
+    qrec = {q["id"]: q for q in load_jsonl(Path(args.data) / "questions.jsonl")}
     tr = [t for t in load_jsonl(args.trace) if t["id"] in golds]
     for t in tr:
-        t["_q"] = qtext.get(t["id"])
+        t["_q"] = qrec.get(t["id"])
     k = max((len(t.get("output") or []) for t in tr), default=0)
     m = math.ceil(cfg.tau * (k or cfg.sql_samples) - 1e-9)
     print(f"{len(tr)} questions, k={k} samples, official m={m} (tau={cfg.tau}), sanity={'on' if cfg.sanity else 'off'}, "
           f"committed policy={cfg.policy}")
 
     # ---- answers: SQL alone, and each rule x SQL policy
+    from eval.resubmit_agent import SqlFinal  # noqa: PLC0415
+    final = SqlFinal(Path(args.data))
     rows = {}
     for t in tr:
         rule = {"id": t["id"], **((t.get("inputs") or {}).get("rule_answer") or {"type": "abstain"})}
-        rows[t["id"]] = (rule, sql_answer(t, m, cfg))
+        rows[t["id"]] = (rule, sql_answer(t, m, cfg, final))
     print("\n" + head())
     sc_sql = {i: score({"id": i, **s} if s else None, golds[i]) for i, (_, s) in rows.items()}
     print(line("SQL alone", *tally(sc_sql.values())))
