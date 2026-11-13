@@ -82,8 +82,13 @@ PYTHONPATH=src .venv/Scripts/python eval/sql_report.py eval/runs/kaggle_sql/<run
 **Tiến độ:** cell dev, holdout và bench chạy lệnh nền rồi in mỗi phút số prompt đã xong, đếm theo dòng replay. Số
 này nhảy theo shop. Output đầy đủ nằm trong `run_eval_*.txt` / `bench_run.txt` của zip.
 
-**Benchmark tổng hợp (E2):** đặt `RUN_BENCH = True`, `BENCH_SIDE = "B"`. Notebook dựng lại biến thể đã niêm phong
-(`bench.py materialize`, CPU khoảng 40 phút) rồi chạy `bench.py run --agent {AGENT}`. Side B có 182 cell, khoảng
+**Benchmark tổng hợp (E2):** đặt `RUN_BENCH = True`, `BENCH_SIDE = "B"`, rồi Add Input dataset private
+`datamate-bench-B`. Dataset này là zip của `eval/synth/out/bench/B`, dựng trên máy lead và đã kiểm khớp niêm phong
+(55/55). Notebook chép biến thể từ dataset rồi chạy `bench.py run --agent {AGENT}`.
+
+Không nên dựng lại biến thể trên Kaggle. Venv ở đó dùng pandas/numpy bản pin của image, nên byte của file biến thể
+khác bản niêm phong: ngày 13/11 có 52 biến thể lệch, `materialize` dừng. Khi thiếu dataset, notebook mới gọi
+`materialize`. Side B có 182 cell, khoảng
 5 giờ trên T4. Nên chạy trên một tài khoản khác, song song với holdout (`RUN_DEV = RUN_HOLDOUT = False`,
 `RUN_SMOKE = False`). Lead chấm điểm trên CPU, sau khi giải nén zip:
 
