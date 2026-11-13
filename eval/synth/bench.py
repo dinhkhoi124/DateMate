@@ -481,6 +481,44 @@ def verify_content(meta: dict, keys: list[str]) -> list[str]:
     return [k for k in keys if k in cf and _content_fp(BENCH / k.split("|")[0] / k.split("|")[1] / "data" / k.split("|")[2]) != cf[k]]
 
 
+def _repair_name(name: str) -> str:
+    """Undo what an upload/unzip may do to a Vietnamese file name: UTF-8 bytes read as cp437/latin-1 (zip without
+    the UTF-8 flag), or NFD instead of NFC. Returns the name unchanged when nothing applies."""
+    import unicodedata   # noqa: PLC0415
+    for enc in ("cp437", "latin-1"):
+        try:
+            fixed = name.encode(enc).decode("utf8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+        if fixed != name:
+            name = fixed
+            break
+    return unicodedata.normalize("NFC", name)
+
+
+def verify_cmd(args):
+    """Check the variants on disk against the sealed content hashes. Lists file names of a differing variant (names
+    only, never content: side B stays totals-only). --fix-names first repairs mangled file names (_repair_name)."""
+    meta, _ = load_cells()
+    keys = sorted(k for k in meta.get("content_fp", {}) if not args.side or k.startswith(f"{args.side}|"))
+    renamed = 0
+    if args.fix_names:
+        for k in keys:
+            d = BENCH / k.split("|")[0] / k.split("|")[1] / "data" / k.split("|")[2]
+            for f in sorted(d.iterdir()) if d.exists() else []:
+                new = _repair_name(f.name)
+                if new != f.name and not (d / new).exists():
+                    f.rename(d / new)
+                    renamed += 1
+    bad = verify_content(meta, keys)
+    print(f"{len(keys)} sealed variants, {len(bad)} differ, {renamed} file names repaired")
+    for k in bad:
+        d = BENCH / k.split("|")[0] / k.split("|")[1] / "data" / k.split("|")[2]
+        names = sorted(p.name for p in d.iterdir()) if d.exists() else ["<missing dir>"]
+        print(f"  {k}: {len(names)} files; non-ascii names: {[n for n in names if not n.isascii()]!r}")
+    sys.exit(1 if bad else 0)
+
+
 # ====================================================================== ingest fidelity
 def ingest(args):
     """Store fingerprint of every variant vs the original (fraction of fingerprint fields equal). drop_table is
@@ -535,6 +573,16 @@ def run(args):
     groups = defaultdict(list)
     for c in sel:
         groups[(c["root"], c["rulebook"])].append(c)
+    # every variant checked BEFORE the model loads: a bad one used to stop the run hours in (Kaggle 13/11, 284 min)
+    for root, _ in sorted(groups):
+        if not (ROOT / root).exists():
+            sys.exit(f"{root} missing: run `bench.py materialize` first")
+    if not args.force:
+        bad = verify_content(meta, sorted({f"{c['side']}|{c['family']}|{c['biz']}" for c in sel
+                                           if c["family"] in F.DATA_FAMILIES}))
+        if bad:
+            sys.exit(f"{len(bad)} variants differ from the sealed benchmark: {', '.join(bad[:8])} "
+                     f"(run materialize, or `bench.py verify` for the file names)")
     run_dir = Path(args.out) if args.out else ROOT / "eval" / "runs" / f"{time.strftime('%Y%m%d_%H%M%S')}_bench_{args.arm}"
     run_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -549,13 +597,6 @@ def run(args):
     with open(run_dir / "trace.jsonl", "w", encoding="utf8", newline="\n") as f:
         for (root, rb), cs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1] or "")):
             rootp = ROOT / root
-            if not rootp.exists():
-                sys.exit(f"{root} missing: run `bench.py materialize` first")
-            fam = cs[0]["family"]
-            if fam in F.DATA_FAMILIES and not args.force:
-                bad = verify_content(meta, sorted({f"{c['side']}|{fam}|{c['biz']}" for c in cs}))
-                if bad:
-                    sys.exit(f"variants differ from the sealed benchmark: {', '.join(bad[:5])} (run materialize)")
             kind = args.agent if args.agent in ("codegen", "sql") else None
             agent = make_agent(llm, rootp, ROOT / rb if rb else None,
                                enabled=kind is not None if args.agent else None, kind=kind)
@@ -945,6 +986,9 @@ def main():
     r.add_argument("--llm-model")
     r.add_argument("--llm-replay")
     r.add_argument("--agent", choices=["off", "codegen", "sql"])
+    v = sub.add_parser("verify")
+    v.add_argument("--side", choices=F.SIDES)
+    v.add_argument("--fix-names", action="store_true", help="repair mangled file names (unzip codepage, NFD) first")
     rg = sub.add_parser("regold")
     rg.add_argument("--force", action="store_true", help="overwrite an existing gold_recomputed.json")
     s = sub.add_parser("score")
@@ -954,7 +998,7 @@ def main():
     s.add_argument("--errors", type=int, default=0, help="list N wrong cells of side A (never side B)")
     args = ap.parse_args()
     {"build": build, "seal": seal, "materialize": materialize, "ingest": ingest, "run": run, "score": score_cmd,
-     "regold": regold}[args.cmd](args)
+     "regold": regold, "verify": verify_cmd}[args.cmd](args)
 
 
 if __name__ == "__main__":

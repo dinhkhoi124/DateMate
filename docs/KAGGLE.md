@@ -88,7 +88,13 @@ này nhảy theo shop. Output đầy đủ nằm trong `run_eval_*.txt` / `bench
 
 Không nên dựng lại biến thể trên Kaggle. Venv ở đó dùng pandas/numpy bản pin của image, nên byte của file biến thể
 khác bản niêm phong: ngày 13/11 có 52 biến thể lệch, `materialize` dừng. Khi thiếu dataset, notebook mới gọi
-`materialize`. Side B có 182 cell, khoảng
+`materialize`.
+
+Sau khi chép, notebook chạy `bench.py verify --side B --fix-names`. Lệnh này sửa tên file tiếng Việt bị đổi khi giải
+nén rồi kiểm niêm phong trước khi nạp model; bản thân `run` cũng kiểm mọi biến thể ngay từ đầu. Ngày 13/11, lượt
+`sql2b` dừng ở phút 284, đúng lúc vào nhóm `layout`, là nhóm đầu tiên có tên file có dấu. Muốn chạy nối tiếp lượt
+hỏng, Add Input bằng Output của version đó: notebook sẽ chép `replay_bench.jsonl` cũ, nên các prompt đã sinh không
+phải sinh lại. Side B có 182 cell, khoảng
 5 giờ trên T4. Nên chạy trên một tài khoản khác, song song với holdout (`RUN_DEV = RUN_HOLDOUT = False`,
 `RUN_SMOKE = False`). Lead chấm điểm trên CPU, sau khi giải nén zip:
 

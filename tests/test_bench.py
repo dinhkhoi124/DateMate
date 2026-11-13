@@ -216,3 +216,13 @@ def test_run_passes_the_agent_kind(monkeypatch, tmp_path):
                               "arm": "t"})()
         BM.run(args)
         assert seen == [want]
+
+
+def test_repair_name_undoes_unzip_codepage_and_nfd():
+    import unicodedata
+    good = "Bảng giá tháng.xlsx"
+    assert BM._repair_name(good) == good
+    assert BM._repair_name("Bán.csv") == "Bán.csv"   # latin-1 encodable but valid: unchanged
+    assert BM._repair_name(good.encode("utf8").decode("cp437")) == good
+    assert BM._repair_name(good.encode("utf8").decode("latin-1")) == good
+    assert BM._repair_name(unicodedata.normalize("NFD", good)) == good
