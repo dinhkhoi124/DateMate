@@ -166,19 +166,38 @@ def _content_fp(path: Path) -> str | None:
     cells differently: then compare with `ingest`, not with this hash."""
     if not path.exists():
         return None
-    import zipfile   # noqa: PLC0415
     h = hashlib.sha1()
     for f in sorted(p for p in path.iterdir() if p.is_file()):
-        h.update(f.name.encode())
-        if f.suffix.lower() in (".xlsx", ".xlsm"):
-            with zipfile.ZipFile(f) as z:
-                for n in sorted(z.namelist()):
-                    if not n.startswith("docProps/"):
-                        h.update(n.encode())
-                        h.update(z.read(n))
-        else:
-            h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+        _hash_file(h, f)
     return h.hexdigest()[:16]
+
+
+def _hash_file(h, f: Path) -> None:
+    """One file's share of _content_fp (name, then content as described there)."""
+    import zipfile   # noqa: PLC0415
+    h.update(f.name.encode())
+    if f.suffix.lower() in (".xlsx", ".xlsm"):
+        with zipfile.ZipFile(f) as z:
+            for n in sorted(z.namelist()):
+                if not n.startswith("docProps/"):
+                    h.update(n.encode())
+                    h.update(z.read(n))
+    else:
+        h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+
+
+def file_fps(path: Path) -> list[tuple[str, int, str]]:
+    """(name, size, hash) of every file of a variant: tells which file differs (names and hashes only, no content)."""
+    out = []
+    for f in sorted(p for p in path.iterdir() if p.is_file()) if path.exists() else []:
+        h = hashlib.sha1()
+        try:
+            _hash_file(h, f)
+            fp = h.hexdigest()[:12]
+        except Exception as e:   # noqa: BLE001  (a truncated xlsx is not a valid zip)
+            fp = f"ERROR {type(e).__name__}"
+        out.append((f.name, f.stat().st_size, fp))
+    return out
 
 
 def seal(args):
@@ -512,10 +531,11 @@ def verify_cmd(args):
                     renamed += 1
     bad = verify_content(meta, keys)
     print(f"{len(keys)} sealed variants, {len(bad)} differ, {renamed} file names repaired")
-    for k in bad:
+    for k in bad if not args.files else keys:
         d = BENCH / k.split("|")[0] / k.split("|")[1] / "data" / k.split("|")[2]
-        names = sorted(p.name for p in d.iterdir()) if d.exists() else ["<missing dir>"]
-        print(f"  {k}: {len(names)} files; non-ascii names: {[n for n in names if not n.isascii()]!r}")
+        print(f"  {k}{'' if d.exists() else ' <missing dir>'}")
+        for name, size, fp in file_fps(d):
+            print(f"      {name!r:32} {size:>10} {fp}")
     sys.exit(1 if bad else 0)
 
 
@@ -577,12 +597,21 @@ def run(args):
     for root, _ in sorted(groups):
         if not (ROOT / root).exists():
             sys.exit(f"{root} missing: run `bench.py materialize` first")
+    skipped = []
     if not args.force:
         bad = verify_content(meta, sorted({f"{c['side']}|{c['family']}|{c['biz']}" for c in sel
                                            if c["family"] in F.DATA_FAMILIES}))
-        if bad:
+        if bad and not args.skip_bad:
             sys.exit(f"{len(bad)} variants differ from the sealed benchmark: {', '.join(bad[:8])} "
-                     f"(run materialize, or `bench.py verify` for the file names)")
+                     f"(run materialize, `bench.py verify` for the files, or --skip-bad)")
+        if bad:   # leave those cells out (scored over the cells run; meta.json lists them) rather than lose the run
+            skipped = [c["key"] for c in sel if f"{c['side']}|{c['family']}|{c['biz']}" in bad]
+            sel = [c for c in sel if f"{c['side']}|{c['family']}|{c['biz']}" not in bad]
+            print(f"--skip-bad: {len(bad)} variants differ from the seal ({', '.join(bad)}): {len(skipped)} cells "
+                  f"left out", flush=True)
+            groups = defaultdict(list)
+            for c in sel:
+                groups[(c["root"], c["rulebook"])].append(c)
     run_dir = Path(args.out) if args.out else ROOT / "eval" / "runs" / f"{time.strftime('%Y%m%d_%H%M%S')}_bench_{args.arm}"
     run_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -592,6 +621,7 @@ def run(args):
     llm = make_llm(args.llm, args.llm_model, args.llm_replay)
     info = {"arm": args.arm, "gen_hash": meta["gen_hash"], "commit": commit, "side": args.side, "families": args.families,
             "agent": args.agent, "llm_model": getattr(getattr(llm, "cfg", None), "model_id", None), "n_cells": len(sel),
+            "skipped_cells": skipped,
             "started": time.strftime("%Y-%m-%d %H:%M:%S")}
     t0 = time.time()
     with open(run_dir / "trace.jsonl", "w", encoding="utf8", newline="\n") as f:
@@ -982,6 +1012,7 @@ def main():
     r.add_argument("--shops", nargs="*")
     r.add_argument("--out")
     r.add_argument("--force", action="store_true", help="run although the generator changed (never for decisions)")
+    r.add_argument("--skip-bad", action="store_true", help="leave out cells whose variant differs from the seal")
     r.add_argument("--llm", choices=["off", "vllm", "replay"])
     r.add_argument("--llm-model")
     r.add_argument("--llm-replay")
@@ -989,6 +1020,7 @@ def main():
     v = sub.add_parser("verify")
     v.add_argument("--side", choices=F.SIDES)
     v.add_argument("--fix-names", action="store_true", help="repair mangled file names (unzip codepage, NFD) first")
+    v.add_argument("--files", action="store_true", help="list file name/size/hash of every variant, not only bad ones")
     rg = sub.add_parser("regold")
     rg.add_argument("--force", action="store_true", help="overwrite an existing gold_recomputed.json")
     s = sub.add_parser("score")

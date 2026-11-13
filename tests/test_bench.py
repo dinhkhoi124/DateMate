@@ -226,3 +226,29 @@ def test_repair_name_undoes_unzip_codepage_and_nfd():
     assert BM._repair_name(good.encode("utf8").decode("cp437")) == good
     assert BM._repair_name(good.encode("utf8").decode("latin-1")) == good
     assert BM._repair_name(unicodedata.normalize("NFD", good)) == good
+
+
+def test_run_skip_bad_leaves_out_only_the_differing_variant(monkeypatch, tmp_path):
+    """A variant that differs from the seal stops `run` up front; with --skip-bad only its cells are left out."""
+    import datamate.run as R
+    monkeypatch.setattr(R, "make_agent", lambda *a, **k: None)
+    monkeypatch.setattr(R, "make_llm", lambda *a: None)
+    root = str(tmp_path / "layout")
+    (tmp_path / "layout").mkdir()
+    cells = [{"key": f"q{i}|layout", "qid": f"q{i}", "biz": biz, "side": "B", "family": "layout", "label": "same",
+              "root": root, "rulebook": None} for i, biz in ((1, "biz_1"), (2, "biz_2"))]
+    monkeypatch.setattr(BM, "load_cells", lambda check=True: ({"gen_hash": "x"}, cells))
+    monkeypatch.setattr(BM, "load_jsonl", lambda p: [{"id": c["qid"], "business_id": c["biz"]} for c in cells])
+    monkeypatch.setattr(BM, "verify_content", lambda meta, keys: [k for k in keys if k.endswith("biz_1")])
+    asked = []
+    monkeypatch.setattr("datamate.pipeline.answer_many", lambda qs, ctx: asked.extend(q["id"] for q in qs) or iter(()))
+    args = type("A", (), {"side": None, "families": None, "shops": None, "out": str(tmp_path / "run"), "force": False,
+                          "skip_bad": False, "llm": None, "llm_model": None, "llm_replay": None, "agent": "off",
+                          "arm": "t"})()
+    with pytest.raises(SystemExit):
+        BM.run(args)
+    assert asked == []
+    args.skip_bad = True
+    BM.run(args)
+    assert asked == ["q2"]
+    assert json.loads((tmp_path / "run" / "meta.json").read_text(encoding="utf8"))["skipped_cells"] == ["q1|layout"]

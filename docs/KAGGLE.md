@@ -90,11 +90,18 @@ Không nên dựng lại biến thể trên Kaggle. Venv ở đó dùng pandas/n
 khác bản niêm phong: ngày 13/11 có 52 biến thể lệch, `materialize` dừng. Khi thiếu dataset, notebook mới gọi
 `materialize`.
 
-Sau khi chép, notebook chạy `bench.py verify --side B --fix-names`. Lệnh này sửa tên file tiếng Việt bị đổi khi giải
-nén rồi kiểm niêm phong trước khi nạp model; bản thân `run` cũng kiểm mọi biến thể ngay từ đầu. Ngày 13/11, lượt
-`sql2b` dừng ở phút 284, đúng lúc vào nhóm `layout`, là nhóm đầu tiên có tên file có dấu. Muốn chạy nối tiếp lượt
-hỏng, Add Input bằng Output của version đó: notebook sẽ chép `replay_bench.jsonl` cũ, nên các prompt đã sinh không
-phải sinh lại. Side B có 182 cell, khoảng
+Sau khi chép, notebook chạy `bench.py verify --side B --fix-names` trước khi nạp model. Lệnh này:
+- sửa tên file bị đổi khi giải nén,
+- kiểm niêm phong,
+- với biến thể lệch, in tên, cỡ và mã băm từng file. Chỉ có tên và mã băm, không có nội dung.
+
+Sau đó `run --skip-bad` bỏ riêng các cell của biến thể lệch và ghi chúng vào `skipped_cells` trong `meta.json`.
+
+Ngày 13/11, lượt `sql2b` dừng ở phút 284 vì `B|layout|biz_127` (toàn file xlsx) lệch niêm phong trên Kaggle. Cũng
+biến thể đó trong file zip đã upload vẫn khớp trên máy lead, tức là file đã bị đổi ở phía Kaggle.
+
+Muốn chạy nối tiếp một lượt hỏng, Add Input bằng Output của version đó. Notebook sẽ chép `replay_bench.jsonl` cũ, nên
+các prompt đã sinh không phải sinh lại. Side B có 182 cell, khoảng
 5 giờ trên T4. Nên chạy trên một tài khoản khác, song song với holdout (`RUN_DEV = RUN_HOLDOUT = False`,
 `RUN_SMOKE = False`). Lead chấm điểm trên CPU, sau khi giải nén zip:
 
