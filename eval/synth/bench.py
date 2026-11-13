@@ -167,9 +167,16 @@ def _content_fp(path: Path) -> str | None:
     if not path.exists():
         return None
     h = hashlib.sha1()
-    for f in sorted(p for p in path.iterdir() if p.is_file()):
+    for f in _files(path):
         _hash_file(h, f)
     return h.hexdigest()[:16]
+
+
+def _files(path: Path) -> list[Path]:
+    """Files of a variant in the order the seal was hashed: case-insensitive name order (the seal was made on Windows,
+    where Path sorts case-insensitively; on Linux a plain sort puts README.md first and 30/72 side-B variants 'differed'
+    on Kaggle, 13/11)."""
+    return sorted((p for p in path.iterdir() if p.is_file()), key=lambda p: (p.name.lower(), p.name))
 
 
 def _hash_file(h, f: Path) -> None:
@@ -189,7 +196,7 @@ def _hash_file(h, f: Path) -> None:
 def file_fps(path: Path) -> list[tuple[str, int, str]]:
     """(name, size, hash) of every file of a variant: tells which file differs (names and hashes only, no content)."""
     out = []
-    for f in sorted(p for p in path.iterdir() if p.is_file()) if path.exists() else []:
+    for f in _files(path) if path.exists() else []:
         h = hashlib.sha1()
         try:
             _hash_file(h, f)
@@ -594,7 +601,7 @@ def run(args):
     for c in sel:
         groups[(c["root"], c["rulebook"])].append(c)
     # every variant checked BEFORE the model loads: a bad one used to stop the run hours in (Kaggle 13/11, 284 min)
-    for root, _ in sorted(groups):
+    for root in sorted({r for r, _ in groups}):
         if not (ROOT / root).exists():
             sys.exit(f"{root} missing: run `bench.py materialize` first")
     skipped = []

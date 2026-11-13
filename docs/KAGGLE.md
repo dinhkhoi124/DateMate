@@ -97,8 +97,13 @@ Sau khi chép, notebook chạy `bench.py verify --side B --fix-names` trước k
 
 Sau đó `run --skip-bad` bỏ riêng các cell của biến thể lệch và ghi chúng vào `skipped_cells` trong `meta.json`.
 
-Ngày 13/11, lượt `sql2b` dừng ở phút 284 vì `B|layout|biz_127` (toàn file xlsx) lệch niêm phong trên Kaggle. Cũng
-biến thể đó trong file zip đã upload vẫn khớp trên máy lead, tức là file đã bị đổi ở phía Kaggle.
+Ngày 13/11, lượt `sql2b` dừng ở phút 284 vì báo `B|layout|biz_127` lệch niêm phong. Thực ra mọi file vẫn giữ nguyên
+byte. Chỗ khác là **thứ tự file** khi băm:
+- Niêm phong được tạo trên Windows, nơi sắp tên file không phân biệt hoa thường.
+- Linux đưa `README.md` lên đầu.
+
+Vì vậy 30/72 biến thể side B bị báo "lệch". `bench._files` nay sắp theo tên viết thường trên mọi máy. Lỗi "52 biến
+thể lệch" khi `materialize` trên Kaggle có lẽ cũng một phần do việc này.
 
 Muốn chạy nối tiếp một lượt hỏng, Add Input bằng Output của version đó. Notebook sẽ chép `replay_bench.jsonl` cũ, nên
 các prompt đã sinh không phải sinh lại. Side B có 182 cell, khoảng

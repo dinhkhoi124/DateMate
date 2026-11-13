@@ -236,7 +236,7 @@ def test_run_skip_bad_leaves_out_only_the_differing_variant(monkeypatch, tmp_pat
     root = str(tmp_path / "layout")
     (tmp_path / "layout").mkdir()
     cells = [{"key": f"q{i}|layout", "qid": f"q{i}", "biz": biz, "side": "B", "family": "layout", "label": "same",
-              "root": root, "rulebook": None} for i, biz in ((1, "biz_1"), (2, "biz_2"))]
+              "root": root, "rulebook": rb} for i, biz, rb in ((1, "biz_1", None), (2, "biz_2", None), (3, "biz_2", "x.md"))]
     monkeypatch.setattr(BM, "load_cells", lambda check=True: ({"gen_hash": "x"}, cells))
     monkeypatch.setattr(BM, "load_jsonl", lambda p: [{"id": c["qid"], "business_id": c["biz"]} for c in cells])
     monkeypatch.setattr(BM, "verify_content", lambda meta, keys: [k for k in keys if k.endswith("biz_1")])
@@ -250,5 +250,18 @@ def test_run_skip_bad_leaves_out_only_the_differing_variant(monkeypatch, tmp_pat
     assert asked == []
     args.skip_bad = True
     BM.run(args)
-    assert asked == ["q2"]
+    assert asked == ["q2", "q3"]   # groups with and without a rulebook (sorting them once raised TypeError)
     assert json.loads((tmp_path / "run" / "meta.json").read_text(encoding="utf8"))["skipped_cells"] == ["q1|layout"]
+
+
+def test_content_fp_file_order_is_case_insensitive(tmp_path):
+    """The seal was hashed on Windows (case-insensitive order); Linux must hash the files in the same order."""
+    import hashlib
+    for n in ("thanh_toan.csv", "README.md", "a.csv", "Z.csv"):
+        (tmp_path / n).write_text(n, encoding="utf8")
+    assert [p.name for p in BM._files(tmp_path)] == ["a.csv", "README.md", "thanh_toan.csv", "Z.csv"]
+    h = hashlib.sha1()
+    for n in ("a.csv", "README.md", "thanh_toan.csv", "Z.csv"):
+        h.update(n.encode())
+        h.update(n.encode())
+    assert BM._content_fp(tmp_path) == h.hexdigest()[:16]
