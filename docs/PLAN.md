@@ -62,8 +62,9 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
       (reexec dev 0.958, 70/1/1)
 - [ ] **[Kaggle] một vòng v2**: holdout 72 câu (chỉ số tổng, so 0.444, luật nhận precision ≥ 0.85), bench side B
       (`RUN_BENCH`), dev 72 câu (kiểm v2 không tụt)
-- [ ] Chọn k/m một lần trên dev + holdout + bench B (giả lập k ∈ {4, 6, 8} từ trace k=8), ghi D27, bảng 3 cổng D23
-      cho PM trước **14/11 12:00**
+- [x] Chọn k/m một lần trên dev + holdout + bench B (giả lập từ trace k=8): **k=4, tau 0.5** (D28, PM duyệt 14/11)
+- [x] Bench B agent SQL (`sql2b`): biến thể 76/0/3, precision 100%, rule_exception stale 11/12 → D27 (trích luật
+      đổi vào prompt, loại mẫu đọc cột theo luật cũ), ước lượng offline stale 7/12
 - [x] Công cụ đọc kết quả SQL: `eval/sql_report.py` (theo op, lớp lỗi DuckDB, giây/câu, `--compare` với code-gen);
       `bench.py run --agent sql`, `bench.py regold` (18/18 gold recomputed); notebook dev in tiến độ mỗi phút và có
       `RUN_BENCH`. A-2: benchmark ingest tái lập khớp BENCHMARK §7 (0 variants differ)

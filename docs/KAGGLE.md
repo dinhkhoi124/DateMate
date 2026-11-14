@@ -43,7 +43,7 @@ PYTHONPATH=src .venv/Scripts/python eval/calibrate_agent.py eval/runs/kaggle_<mo
 
 ### Agent text-to-SQL (D26)
 
-Trong cell cấu hình: `BRANCH = "feat/sql-agent"` (tới khi merge), `AGENT = "sql"`, `SQL_SAMPLES = 8`. Có thể đặt
+Trong cell cấu hình: `BRANCH = "feat/sql-agent"` (tới khi merge), `AGENT = "sql"`, `SQL_SAMPLES = 4` (D28). Có thể đặt
 `MAX_TOKENS = 768`: mỗi câu trả lời chỉ gồm vài dòng ghi chú và một câu SQL, ngắn hơn code pandas nhiều. Cell
 `os.environ` tự dựng kho few-shot (`eval/build_fewshot_sql.py`, chỉ shop dev, CPU khoảng 5–8 phút), vì file này bị
 gitignore nên không có trên GitHub. Tên zip có tiền tố `datamate_dev_sql_`.
@@ -144,7 +144,7 @@ PYTHONPATH=src .venv/Scripts/python eval/resubmit_agent.py eval/runs/public_pub1
 **Agent SQL (D26):** trong cell cấu hình đặt `AGENT = "sql"` và `BRANCH = "feat/sql-agent"` (tới khi merge); Add
 Input thêm dataset **train** `datamate-train` (notebook dựng kho few-shot từ shop dev của train, không đọc gì của
 public để làm ví dụ). Tên zip có tiền tố `datamate_public_sql_`. Gộp shard bằng cờ `--sql`: ngưỡng chính thức là
-`ceil(tau × sql_samples)` của `AgentConfig` đã commit (hiện 4/8), có kiểm tra hợp lý như lúc chạy; `--reexec` chạy
+`ceil(tau × sql_samples)` của `AgentConfig` đã commit (hiện 2/4, D28), có kiểm tra hợp lý như lúc chạy; `--reexec` chạy
 lại câu trả lời SQL đã ghi trên DuckDB với view hiện tại:
 
 ```bash

@@ -4,6 +4,20 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D28 — Agent SQL lấy k=4 mẫu, tau 0.5 (m=2) (2026-11-14, PM duyệt)
+- **Bối cảnh:** k=8 trên T4 mất khoảng 146 giây/câu. Ở tốc độ đó, 1000 câu public không vừa 3 shard × 12 giờ của
+  Kaggle, và đội không đo trước được máy 2× 5090 của BTC (giới hạn 6 giờ), cũng như laptop RTX 4060 dùng cho
+  private (offload CPU).
+- **Lựa chọn:** `AgentConfig.sql_samples = 4`, `tau = 0.5` giữ nguyên (m = 2). Chọn chỉ trên train (CLAUDE.md luật 8).
+- **Lý do:** giả lập từ trace k=8 (4 mẫu đầu) cho kết quả bằng hoặc hơn k=8:
+  - dev: 0.978 so với 0.972;
+  - holdout (chỉ số tổng): 0.861 so với 0.861, precision 0.956;
+  - bench B (agree): giống hệt (gốc 91/0/0, biến thể 76/0/3);
+  - nhiễu lấy mẫu sd ≤ 0.015 (v0.10e).
+- **Hệ quả:**
+  - Khoá replay đổi theo n, nên replay k=8 cũ không dùng lại được cho lượt k=4.
+  - Notebook Kaggle đặt `SQL_SAMPLES = 4`. `resubmit_agent --sql` lấy m từ cấu hình này.
+
 ### D27 — Agent SQL: rulebook đổi thì trích luật mới vào prompt và loại mẫu còn dùng cột tính theo luật cũ (2026-11-14)
 - **Bối cảnh:** bench side B (`sql2b`, v0.10g): precision 100% trên mọi biến thể đổi định dạng, nhưng nhóm
   `rule_exception` (rulebook thêm ngoại lệ) trả đáp án theo luật cũ ở **11/12** cell. Bộ phân tích rulebook (D18)

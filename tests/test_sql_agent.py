@@ -88,7 +88,7 @@ def test_agent_config_env(monkeypatch):
     monkeypatch.setenv("DATAMATE_AGENT", "sql")
     monkeypatch.setenv("DATAMATE_AGENT_TAU", "0.625")
     c = AgentConfig.from_env()
-    assert c.enabled and c.kind == "sql" and c.tau == 0.625 and c.sql_samples == 8
+    assert c.enabled and c.kind == "sql" and c.tau == 0.625 and c.sql_samples == 4
     monkeypatch.setenv("DATAMATE_AGENT", "codegen")
     assert AgentConfig.from_env().kind == "codegen"
 

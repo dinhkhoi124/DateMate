@@ -147,7 +147,7 @@ class AgentConfig:
     # share >= tau of k (slide 33 baseline: k=8, tau=0.5), one repair turn for failed queries, empty results never
     # vote, sanity checks after the vote. tau/policy are chosen on train only (CLAUDE.md rule 8)
     kind: str = "codegen"               # codegen | sql
-    sql_samples: int = 8
+    sql_samples: int = 4                # D28: k=4 m=2 = k=8 m=4 on dev/holdout/bench B, half the generation time
     tau: float = 0.5
     repair_turns: int = 1
     fewshot_k: int = 4
