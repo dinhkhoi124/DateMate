@@ -65,8 +65,28 @@ Quy tắc SQL:
   TYPE: unanswerable và không viết SQL."""
 
 
+def rule_change_block(rows: list[tuple[str, str | None, list[str]]]) -> str:
+    """Prompt section for the rulebook rows this question touches that differ from the default (train) rulebook:
+    (row id, split wording or None when the row is gone, artifacts built on the old reading). Empty -> ''."""
+    if not rows:
+        return ""
+    out = ["=== LUẬT CỦA BỘ DỮ LIỆU NÀY KHÁC LUẬT MẶC ĐỊNH (liên quan tới câu hỏi) ==="]
+    for rid, text, arts in rows:
+        if rid.startswith("new:"):
+            out.append(f"- Luật mới {rid[4:]}: {text}")
+        elif text is None:
+            out.append(f"- Mục {rid} của luật mặc định không còn trong RULEBOOK.")
+        else:
+            out.append(f"- Mục {rid} đã đổi, nay là: {text}")
+        if arts:
+            out.append(f"  {', '.join(arts)} trong SCHEMA tính theo luật MẶC ĐỊNH cũ: KHÔNG dùng. Tự tính từ cột gốc "
+                       "(status, raw_status, bảng gốc) đúng theo mục trên. Câu SQL dùng các tên này sẽ bị loại.")
+    out.append("Ghi trong Notes mục rulebook nào đổi và cách đã áp dụng.")
+    return "\n".join(out) + "\n\n"
+
+
 def build_prompt(rulebook: str, readme: str, schema: str, question: str, as_of_line: str, hints: list[str],
-                 examples: list[dict]) -> str:
+                 examples: list[dict], rule_change: str = "") -> str:
     ex = ""
     if examples:
         ex = "=== VÍ DỤ (shop khác, chỉ để tham khảo cách viết) ===\n" + "\n\n".join(
@@ -78,6 +98,7 @@ def build_prompt(rulebook: str, readme: str, schema: str, question: str, as_of_l
             f"=== SCHEMA (DuckDB) ===\n{schema}\n\n"
             f"{ex}"
             f"=== GỢI Ý (đã tính sẵn bằng code, dùng đúng các giá trị này) ===\n- {as_of_line}\n{hint}\n\n"
+            f"{rule_change}"
             f"=== CÂU HỎI ===\n{question}\n\nNotes:\n-")
 
 

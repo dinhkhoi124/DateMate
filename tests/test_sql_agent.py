@@ -360,3 +360,79 @@ def test_parse_reply_takes_the_type_from_the_notes_when_the_type_line_is_missing
     assert parse_reply("TYPE: list\n- kiểu đáp án: number\n```sql\nSELECT 1\n```")[0] == "list"   # TYPE line wins
     assert parse_reply("- kiểu đáp án: unanswerable\n```sql\nSELECT 1\n```")[0] is None   # never inferred
     assert parse_reply("- kiểu đáp án: number\nkhông có truy vấn")[0] is None             # no SQL -> no type
+
+
+# ------------------------------------------------------------------------------- rulebook changed (bench B 14/11)
+
+def _changed_rulebook(tmp_path):
+    """Train rulebook with an exception added to §1.5 (số đơn), like the benchmark's rule_exception family."""
+    md = (ROOT / "rulebook.md").read_text(encoding="utf8").splitlines()
+    i = next(n for n, l in enumerate(md) if l.startswith("| Số đơn |"))
+    md[i] = md[i].rstrip().rstrip("|").rstrip() + " Ngoại lệ: số đơn đếm cả đơn đã huỷ và đơn trả hàng. |"
+    p = tmp_path / "rulebook.md"
+    p.write_text("\n".join(md) + "\n", encoding="utf8")
+    return p
+
+
+def test_stale_artifacts_matches_whole_names_only():
+    from datamate.agent.sqldb import stale_artifacts
+    sql = "SELECT SUM(total_amount) FROM v_orders WHERE IS_VALID"
+    assert stale_artifacts(sql, ["§1.5"]) == ["is_valid"]
+    assert stale_artifacts(sql, ["§1.6"]) == []            # total_amount is not the line column amount
+    assert stale_artifacts(sql, []) == [] and stale_artifacts(None, ["§1.5"]) == []
+
+
+@needs_data
+def test_train_rulebook_prompt_has_no_rule_change_section(store):
+    ag = _agent(Fake([]))
+    db, schema, readme, lk = ag._shop(SHOP, store)
+    assert ag.touched_rows({**Q, "_rb_rows": None}) == []
+    assert "KHÁC LUẬT MẶC ĐỊNH" not in ag.prompt(Q, schema, readme, lk)
+    ag.close()
+
+
+@needs_data
+def test_changed_rule_row_quoted_and_old_artifact_samples_do_not_vote(store, tmp_path):
+    """rulebook §1.5 changed: the prompt quotes the split's row, samples still filtering is_valid do not vote."""
+    from datamate.agent.sql_agent import FEWSHOT_PATH
+    cfg = AgentConfig(enabled=True, kind="sql", sql_samples=4, tau=0.5, fewshot_k=0)
+    old = reply("number", GOOD)
+    new = reply("number", "SELECT COUNT(*) FROM v_orders WHERE order_date BETWEEN DATE '2026-05-01' AND DATE '2026-05-31'")
+    rb = _changed_rulebook(tmp_path)
+    ag = SqlAgent(Fake([old, old, old, new]), cfg, ROOT, rulebook=rb, fewshot=FEWSHOT_PATH)
+    db, schema, readme, lk = ag._shop(SHOP, store)
+    q = {**Q, "_rb_rows": ["§1.5"]}
+    p = ag.prompt(q, schema, readme, lk)
+    assert "KHÁC LUẬT MẶC ĐỊNH" in p and "Ngoại lệ: số đơn đếm cả đơn đã huỷ" in p and "is_valid" in p
+    (row, tr), = ag.solve_shop([q], store)
+    assert [o["status"] for o in tr["output"]] == ["rule_stale"] * 3 + ["ok"]
+    assert row is None and tr["vote"] == "1/4"             # the old-rule majority no longer wins
+    ag.close()
+    # the rule intent touches no changed row -> no section, every sample votes
+    ag = SqlAgent(Fake([old] * 4), cfg, ROOT, rulebook=rb, fewshot=FEWSHOT_PATH)
+    (row, tr), = ag.solve_shop([{**Q, "_rb_rows": []}], store)
+    assert row is not None and tr["vote"] == "4/4"
+    # no rule intent -> fail closed: every changed scoped row counts
+    assert "§1.5" in ag.touched_rows({**Q, "_rb_rows": None})
+    ag.close()
+
+
+@needs_data
+def test_pipeline_passes_the_rule_intent_rows_to_the_sql_agent(tmp_path):
+    from datamate.pipeline import Context, answer_many
+    rb = _changed_rulebook(tmp_path)
+    seen = []
+
+    class Spy:
+        cfg = AgentConfig(enabled=True, kind="sql", policy="agree")
+
+        def solve_shop(self, qs, store):
+            seen.extend(qs)
+            return [(None, {"vote": "x"}) for _ in qs]
+
+    ctx = Context(root=ROOT, rulebook=rb, agent=Spy())
+    list(answer_many([Q], ctx))
+    assert seen[0]["_rb_rows"] == ["§1.5"]
+    seen.clear()
+    list(answer_many([Q], Context(root=ROOT, agent=Spy())))   # train rulebook: nothing recorded
+    assert seen[0]["_rb_rows"] is None

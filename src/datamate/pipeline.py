@@ -146,6 +146,8 @@ def finish(q: dict, ctx: Context, p: Parsed, it):
     """Decided intent -> row: rulebook block / judge (D18-D19), run-time invariants (D11), executor."""
     t, f, as_of = p.t, p.f, p.as_of
     folded = fold(q["question"])
+    if ctx.rb.changed or ctx.rb.missing or ctx.rb.new_rows:   # rows this intent touches, for the SQL agent's gate
+        it.rb_rows = ctx.rb.hits(it, folded)
     why = ctx.rb.block_reason(it, folded)
     if why:   # D18: the split's rulebook changed a rule this intent relies on, or adds a rule it mentions
         ok = False   # fail closed: no judge, judge error or any non-'same' -> abstain, never the rule answer
@@ -186,6 +188,8 @@ def trace_of(t: str, it, row: dict) -> dict:
                                 "end": p.end.isoformat()} for p in it.periods])
         if it.note:
             inputs["note"] = it.note
+        if getattr(it, "rb_rows", None) is not None:   # row ids only, never rulebook text
+            inputs["rulebook_rows"] = it.rb_rows
     return {"thinking": it.llm_raw if it is not None else None,
             "code": f"datamate.execute.dispatch.run(op={it.op!r})" if it is not None else None,
             "inputs": inputs,
@@ -240,7 +244,9 @@ def answer_many(qs: list[dict], ctx: Context):
                 ctx.agent_skipped += len(group)
                 cg = [(None, {"vote": "deadline: agent skipped"})] * len(group)
             else:
-                cg = ctx.agent.solve_shop(group, ctx.store(biz))
+                # rulebook rows the rule path's intent touches (None: no intent reached the rulebook check)
+                cg = ctx.agent.solve_shop([{**q, "_rb_rows": (rtr.get("inputs") or {}).get("rulebook_rows")}
+                                           for q, (_, rtr) in zip(group, rule)], ctx.store(biz))
         except Exception:  # noqa: BLE001
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)

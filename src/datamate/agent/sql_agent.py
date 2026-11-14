@@ -17,8 +17,9 @@ from pathlib import Path
 
 from datamate.agent.answer import canon, vote_key
 from datamate.agent.hints import as_of_line, question_hints
-from datamate.agent.sql_prompt import EmptyResult, build_prompt, parse_reply, repair_prompt, to_row
-from datamate.agent.sqldb import QueryError, build_db, schema_text
+from datamate.agent.sql_prompt import (EmptyResult, build_prompt, parse_reply, repair_prompt, rule_change_block,
+                                       to_row)
+from datamate.agent.sqldb import RULE_ARTIFACTS, QueryError, build_db, schema_text, stale_artifacts
 from datamate.config import AgentConfig
 from datamate.normalize.text import normalize
 
@@ -137,15 +138,47 @@ class SqlAgent:
         return Helpers(date.fromisoformat(q["as_of_date"]), normalize(q["question"]), self.cal, self.rules, lk,
                        None, q["question"])
 
+    def touched_rows(self, q: dict) -> list[str]:
+        """Rulebook rows this question touches that the split changed, dropped (train ids) or added ('new:' ids).
+        `q['_rb_rows']` = the rule path's RulebookDiff.hits for its intent (pipeline.answer_many); no rule intent ->
+        every changed/dropped scoped row plus the new rows whose keyword is in the question (fail closed). Train
+        rulebook -> [] (prompt and vote unchanged)."""
+        rb = self.rb
+        if not (rb.changed or rb.missing or rb.new_rows):
+            return []
+        rows = q.get("_rb_rows")
+        if rows is None:
+            from datamate.rulebook import fold  # noqa: PLC0415
+            qf = f" {fold(q['question'])} "
+            rows = set().union(*rb.blocked.values()) if rb.blocked else set()
+            for kw in rb.keywords:
+                if f" {kw} " in qf:
+                    rows |= rb.kw_rows[kw]
+        return sorted(rows)
+
     def prompt(self, q: dict, schema: str, readme: str, lk) -> str:
         H = self._helpers(q, lk)
         ex = self.fewshot.pick(q["question"], q["business_id"], self.cfg.fewshot_k)
+        rows = self.touched_rows(q)
+        rc = rule_change_block([(r, self.rb.texts.get(r), list(RULE_ARTIFACTS.get(r, ()))) for r in rows])
         args = (self.rulebook, readme, schema, q["question"], as_of_line(H.as_of), question_hints(q["question"], H))
-        p = build_prompt(*args, ex)
+        p = build_prompt(*args, ex, rc)
         while len(p) > self.cfg.max_prompt_chars and ex:   # long README/schema: fewer examples, never a cut rulebook
             ex = ex[:-1]
-            p = build_prompt(*args, ex)
+            p = build_prompt(*args, ex, rc)
         return p
+
+    def gate_stale(self, q: dict, runs: list) -> list:
+        """Samples whose query reads an artifact built on the old reading of a changed rule row this question touches
+        do not vote (status 'rule_stale'): they answer with the train rule (bench B 14/11, CLAUDE.md rule 5)."""
+        rows = [r for r in self.touched_rows(q) if not r.startswith("new:")]
+        if not rows:
+            return runs
+        out = []
+        for st, row, sql, err in runs:
+            arts = stale_artifacts(sql, rows) if st == "ok" else []
+            out.append(("rule_stale", None, sql, f"reads {', '.join(arts)} (old rule)") if arts else (st, row, sql, err))
+        return out
 
     def solve_shop(self, qs: list[dict], store) -> list[tuple[dict | None, dict]]:
         if not qs:
@@ -188,7 +221,7 @@ class SqlAgent:
         t4 = time.perf_counter()
         res = []
         for q, raw, rs in zip(qs, outs, runs):
-            row, trace = self._vote(q, raw, rs, k)
+            row, trace = self._vote(q, raw, self.gate_stale(q, rs), k)
             if row is None:
                 row, trace = self.outside_data(q, store, row, trace)
             trace["timing"] = {"prompt_s": (t1 - t0) / len(qs), "gen_batch_s": t2 - t1, "batch_n": len(qs),

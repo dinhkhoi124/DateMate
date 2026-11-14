@@ -4,6 +4,35 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D27 — Agent SQL: rulebook đổi thì trích luật mới vào prompt và loại mẫu còn dùng cột tính theo luật cũ (2026-11-14)
+- **Bối cảnh:** bench side B (`sql2b`, v0.10g): precision 100% trên mọi biến thể đổi định dạng, nhưng nhóm
+  `rule_exception` (rulebook thêm ngoại lệ) trả đáp án theo luật cũ ở **11/12** cell. Bộ phân tích rulebook (D18)
+  đã bắt đúng dòng đổi và đường luật abstain, nhưng mọi mẫu SQL vẫn đọc cột/macro dựng sẵn theo luật train
+  (`is_valid`, `debt_at`…), và chính sách `agree` để SQL trả lời một mình. Dòng LƯU Ý trong SCHEMA không đủ.
+  Rulebook public (chỉ đếm): 3 dòng đổi, 3 mất, 25 mới, 42 scope bị chặn, nên chặn thẳng "rulebook đổi → abstain"
+  sẽ mất gần hết câu trả lời của agent.
+- **Lựa chọn:**
+  1. `sqldb.RULE_ARTIFACTS`: bảng "dòng rulebook train → cột/macro/view tính theo cách đọc mặc định của dòng đó"
+     (§1.1/§1.5 `is_valid`, §1.6 `revenue`/`amount`, §4 macro nợ, §5 `stock_at`, §6 `lots_at`/`v_deliveries`…).
+  2. Các dòng một câu hỏi chạm tới = `RulebookDiff.hits` của ý định do đường luật đọc (`pipeline.finish` ghi
+     `rulebook_rows` vào trace, `answer_many` chuyển cho agent). Đường luật không ra ý định → mọi dòng đổi/mất có
+     scope, cộng dòng mới có từ khoá trong câu (fail closed).
+  3. Prompt: mục "LUẬT CỦA BỘ DỮ LIỆU NÀY KHÁC LUẬT MẶC ĐỊNH" ngay trước câu hỏi, trích nguyên văn dòng của split
+     và nêu tên cột/macro không được dùng.
+  4. Sau khi chạy (và sau lượt sửa), mẫu có SQL đọc một artifact của dòng đã đổi → trạng thái `rule_stale`, không
+     bỏ phiếu. Ngưỡng share giữ nguyên, nên đa số theo luật cũ biến thành abstain.
+- **Lý do:** model tự đọc luật mới vẫn là cách duy nhất giữ coverage khi rulebook đổi; phần kiểm tra là tất định
+  (tên artifact trong SQL), không dựa vào lời model tự khai (CLAUDE.md luật 5).
+- **Hệ quả:**
+  - Rulebook giống train thì không đổi gì: replay Kaggle `sql2` dev trúng 72/72 prompt, agree 72/0/0. Rule-only dev
+    giữ 2410/0/37.
+  - Ước lượng trên mẫu cũ của bench B (cận dưới, chưa có prompt mới): stale 11 → 7/12, gốc và biến thể không đổi
+    (91/0/0, 76/0/3). Side B đổi §3.3 (không có artifact, chỉ prompt giúp) và §4.2 (macro nợ, bắt 4/5 cell).
+  - Câu trả lời theo luật mới không có gold trong bench (nhãn `changed`), nên precision của chúng chưa đo được.
+    Kiểm bằng mắt trên trace side A (được phép xem từng câu).
+  - Công cụ offline (`reexec_agent`, `resubmit_agent`, `sql_report`) chưa áp bộ chặn; chỉ ảnh hưởng split có
+    rulebook đổi.
+
 ### D26 — Thêm agent text-to-SQL trên view DuckDB (thử nghiệm, mặc định tắt) (2026-11-12)
 - **Bối cảnh:** public 0.114 (rule-only) và 0.117 (agent pandas, precision ước ~60%). Code-gen một mình: dev 0.653 →
   holdout 0.444. Slide BTC (Zalo AI Track 2, trang 26–39) mô tả baseline cùng cỡ model: agent sinh pandas chỉ đạt

@@ -695,7 +695,7 @@ def runtime_class(r: dict) -> str | None:
     st = r.get("status")
     if st == "ok":
         return None
-    if st in ("timeout", "no_code", "empty", "no_sql"):   # empty / no_sql: text-to-SQL agent (D26)
+    if st in ("timeout", "no_code", "empty", "no_sql", "rule_stale"):   # empty / no_sql / rule_stale: SQL agent (D26)
         return st
     e = str(r.get("result") or "")
     if re.search(r"Binder Error|Catalog Error", e):          # DuckDB: column / table not in the views

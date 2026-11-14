@@ -19,6 +19,7 @@ statement only, with a wall-clock timeout (`con.interrupt()`). One thread: ident
 """
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -418,6 +419,40 @@ _WARN = (  # (scope entries of rulebook.SCOPES, what the warning names)
     (("stock_qty", "stock_value"), "tồn kho (§5): macro stock_at theo định nghĩa mặc định"),
     (("nearest_expiry", "expiring_products"), "lô/hạn dùng (§6): macro lots_at theo định nghĩa mặc định"),
 )
+
+
+# rulebook row (train id) -> view columns / macros / views computed with the TRAIN reading of that row. When a split's
+# rulebook changes or drops one of these rows, a SQL sample that still reads the artifact answers with the old rule
+# (bench B 14/11: 11/12 rule_exception cells stale) -> it does not vote (stale_artifacts). Rows that only steer how a
+# query is written (§1.2, §2.x periods...) have no artifact: their text is quoted in the prompt only.
+RULE_ARTIFACTS = {
+    "§1.1": ("is_valid",),                      # rulebook §1.1: đơn tính doanh thu = không huỷ, không trả
+    "§1.5": ("is_valid",),                      # rulebook §1.5: số đơn = đơn không huỷ, không trả
+    "§1.6": ("revenue", "amount"),              # rulebook §1.6: doanh thu một đơn = tổng thành tiền dòng
+    "§2.12": ("shift",),                        # rulebook §2.12: ca sáng / ca chiều theo giờ tạo đơn
+    "§3.1": ("is_fee",),                        # rulebook §3.1: dòng Phí phục vụ không phải mặt hàng
+    "§4.1": ("debt_at", "debt_new", "debt_repaid"),   # rulebook §4: công nợ
+    "§4.2": ("debt_at", "debt_new", "debt_repaid"),
+    "§4.4": ("debt_at", "debt_new", "debt_repaid"),
+    "§4.5": ("debt_at",),
+    "§4.6": ("debt_new", "debt_repaid"),
+    "§5.4": ("stock_at",),                      # rulebook §5: tồn kho
+    "§5.5": ("stock_at",),
+    "§5.6": ("stock_at",),
+    "§5.10": ("cost_unit",),                    # rulebook §5.10: giá vốn
+    "§6[nha thuoc].2": ("lots_at",),            # rulebook §6 nhà thuốc: lô, hạn dùng
+    "§6[nha thuoc].4": ("lots_at",),
+    "§6[vat lieu xay dung].1": ("v_deliveries",),   # rulebook §6 VLXD: đợt giao
+}
+
+
+def stale_artifacts(sql: str | None, rows: list[str]) -> list[str]:
+    """Artifacts built on the train reading of a rulebook row in `rows` (rows this question touches that the split
+    changed or dropped) that the query reads. Non-empty -> the sample keeps the old rule and must not vote."""
+    if not sql or not rows:
+        return []
+    names = sorted({a for r in rows for a in RULE_ARTIFACTS.get(r, ())})
+    return [a for a in names if re.search(rf"\b{a}\b", sql, re.I)]
 
 
 def build_db(st, rules, rb=None) -> ShopDB:
