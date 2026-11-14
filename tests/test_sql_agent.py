@@ -351,3 +351,12 @@ def test_resubmit_sql_vote_applies_outside_data():
     assert sql_vote(r, q, 4, False, final) == {"type": "unanswerable", "reason": "period before data"}
     assert sql_vote(r, {**q, "question": "tháng 5/2026 có bao nhiêu đơn"}, 4, False, final) is None
     final.close()
+
+
+def test_parse_reply_takes_the_type_from_the_notes_when_the_type_line_is_missing():
+    from datamate.agent.sql_prompt import parse_reply
+    reply = ("- kỳ thời gian: 2026-04-21\n- kiểu đáp án: number\n```sql\nSELECT 1\n```")
+    assert parse_reply(reply) == ("number", "SELECT 1")
+    assert parse_reply("TYPE: list\n- kiểu đáp án: number\n```sql\nSELECT 1\n```")[0] == "list"   # TYPE line wins
+    assert parse_reply("- kiểu đáp án: unanswerable\n```sql\nSELECT 1\n```")[0] is None   # never inferred
+    assert parse_reply("- kiểu đáp án: number\nkhông có truy vấn")[0] is None             # no SQL -> no type

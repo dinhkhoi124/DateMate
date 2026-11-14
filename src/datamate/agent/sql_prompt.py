@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from datetime import date, datetime
 
 from datamate.agent.helpers import round_half_up
@@ -84,6 +85,7 @@ def build_prompt(rulebook: str, readme: str, schema: str, question: str, as_of_l
 
 _SQL = re.compile(r"```(?:sql|SQL)?\s*\n(.*?)```", re.S)
 _TYPE = re.compile(r"^\s*TYPE\s*:\s*([A-Za-z]+)", re.M)
+_NOTED_TYPE = re.compile(r"kiểu đáp án\W*([A-Za-z]+)", re.I)
 
 
 def parse_reply(text: str) -> tuple[str | None, str | None]:
@@ -102,6 +104,10 @@ def parse_reply(text: str) -> tuple[str | None, str | None]:
         sql = m.group(1).strip().rstrip("`").strip() if m else None
     if sql:
         sql = sql.strip().rstrip(";").strip()
+    if atype is None and sql:   # TYPE line forgotten: the notes already state it ("- kiểu đáp án: number (...)")
+        noted = [m.lower() for m in _NOTED_TYPE.findall(unicodedata.normalize("NFC", t))]
+        if noted and noted[-1] in TYPES and noted[-1] != "unanswerable":   # never infer 'unanswerable'
+            atype = noted[-1]
     return atype, sql
 
 
