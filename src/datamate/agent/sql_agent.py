@@ -150,10 +150,10 @@ class SqlAgent:
         if rows is None:
             from datamate.rulebook import fold  # noqa: PLC0415
             qf = f" {fold(q['question'])} "
-            rows = set().union(*rb.blocked.values()) if rb.blocked else set()
+            rows = {r for ids in rb.blocked.values() for r in ids}   # values are sorted lists (rulebook.analyse)
             for kw in rb.keywords:
                 if f" {kw} " in qf:
-                    rows |= rb.kw_rows[kw]
+                    rows.update(rb.kw_rows.get(kw, ()))
         return sorted(rows)
 
     def prompt(self, q: dict, schema: str, readme: str, lk) -> str:

@@ -436,3 +436,27 @@ def test_pipeline_passes_the_rule_intent_rows_to_the_sql_agent(tmp_path):
     seen.clear()
     list(answer_many([Q], Context(root=ROOT, agent=Spy())))   # train rulebook: nothing recorded
     assert seen[0]["_rb_rows"] is None
+
+
+@needs_data
+def test_no_rule_intent_with_new_rulebook_rows_fails_closed_without_error(store, tmp_path):
+    """Public-like rulebook (changed + NEW rows): with no rule intent, touched rows = every changed scoped row plus
+    the new rows whose keyword is in the question. RulebookDiff stores both maps as sorted lists (14/11 dry run on a
+    rulebook with new rows: TypeError on set |= list)."""
+    md = _changed_rulebook(tmp_path).read_text(encoding="utf8").splitlines()
+    i = next(n for n, l in enumerate(md) if l.startswith("| Số đơn |"))
+    md.insert(i + 1, "| Khách kim cương | khách có tổng chi tiêu từ 50 triệu đồng trong năm dương lịch |")
+    rb = tmp_path / "rulebook_new.md"
+    rb.write_text("\n".join(md) + "\n", encoding="utf8")
+    cfg = AgentConfig(enabled=True, kind="sql", sql_samples=4, tau=0.5, fewshot_k=0)
+    ag = SqlAgent(Fake([reply("number", GOOD)] * 4), cfg, ROOT, rulebook=rb)
+    assert ag.rb.keywords and ag.rb.kw_rows
+    kw = ag.rb.keywords[0]
+    q = {**Q, "question": f"có bao nhiêu {kw} trong tháng 5/2026", "_rb_rows": None}
+    rows = ag.touched_rows(q)
+    assert "§1.5" in rows and any(r.startswith("new:") for r in rows)
+    db, schema, readme, lk = ag._shop(SHOP, store)
+    assert "Luật mới" in ag.prompt(q, schema, readme, lk)
+    (row, tr), = ag.solve_shop([q], store)              # runs end to end: old-rule samples gated, no exception
+    assert {o["status"] for o in tr["output"]} == {"rule_stale"} and row is None
+    ag.close()
