@@ -62,7 +62,7 @@ class LLMConfig:
     """LLM parser + ensemble (DECISIONS D14). backend 'off' = rule-only pipeline, unchanged behaviour.
     Env: DATAMATE_LLM (off|vllm|replay), DATAMATE_LLM_MODEL (local weights dir), DATAMATE_LLM_REPLAY (jsonl),
     DATAMATE_LLM_SAMPLES, DATAMATE_LLM_MODEL_ID, DATAMATE_LLM_CALL_ALL, DATAMATE_LLM_RULE_JUDGE (1 = on),
-    DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN}, DATAMATE_LLM_PREFIX_CACHE (0 = off),
+    DATAMATE_LLM_{DTYPE,TP,GPU_UTIL,MAX_LEN,CPU_OFFLOAD_GB}, DATAMATE_LLM_PREFIX_CACHE (0 = off),
     DATAMATE_LLM_THINKING (1 = Qwen3 enable_thinking)."""
     backend: str = "off"
     model_path: str = ""
@@ -71,6 +71,9 @@ class LLMConfig:
     max_model_len: int = 12288                # prompt ~7k tokens (81 few-shot), prefix-cached
     gpu_memory_utilization: float = 0.85
     tensor_parallel_size: int = 1
+    # GiB of weights vLLM keeps in CPU RAM: lets the 14B AWQ model run on the team's 8 GB RTX 4060 (private round,
+    # 20-23/11). 0 = all on GPU (the organisers' 2x 5090); not part of the replay key
+    cpu_offload_gb: float = 0.0
     # off on GPUs < sm80 (T4): vLLM's Triton prefix-prefill kernel does not compile for sm75 (Kaggle, 09/11)
     prefix_caching: bool = True
     max_tokens: int = 256
@@ -110,7 +113,8 @@ class LLMConfig:
         # GPU-side knobs for the teammate machine (docs/GPU_RUNBOOK.md); none of them is part of the replay key
         for var, field, typ in (("DATAMATE_LLM_DTYPE", "dtype", str), ("DATAMATE_LLM_TP", "tensor_parallel_size", int),
                                 ("DATAMATE_LLM_GPU_UTIL", "gpu_memory_utilization", float),
-                                ("DATAMATE_LLM_MAX_LEN", "max_model_len", int)):
+                                ("DATAMATE_LLM_MAX_LEN", "max_model_len", int),
+                                ("DATAMATE_LLM_CPU_OFFLOAD_GB", "cpu_offload_gb", float)):
             if os.environ.get(var):
                 env[field] = typ(os.environ[var])
         if os.environ.get("DATAMATE_LLM_THINKING", "") not in ("", "0"):   # Qwen3 reasoning mode (code-gen A/B)

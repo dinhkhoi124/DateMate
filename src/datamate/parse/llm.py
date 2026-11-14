@@ -84,6 +84,7 @@ class VLLMBackend:
                        enable_prefix_caching=cfg.prefix_caching,
                        # no prefix cache -> also no chunked prefill: both go through the Triton prefix-prefill kernel
                        **({} if cfg.prefix_caching else {"enable_chunked_prefill": False}),
+                       **({"cpu_offload_gb": cfg.cpu_offload_gb} if cfg.cpu_offload_gb > 0 else {}),
                        tensor_parallel_size=cfg.tensor_parallel_size)
         self.tok = self.llm.get_tokenizer()
 

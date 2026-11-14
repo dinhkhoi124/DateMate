@@ -28,6 +28,30 @@ docker run --rm --gpus '"device=0,1"' --network none --shm-size=16g --entrypoint
   `code`, `inputs` (đáp án parser luật, nguồn của đáp án cuối, số phiếu), `output`.
 - File tạm: `/tmp/datamate_cache`.
 - Không có tham số chỉnh: luật nghiệp vụ đọc từ `/data/rulebook.md` lúc chạy, phần còn lại cố định trong code.
+- Image LLM tự chuyển sang đáp án luật cho các shop còn lại sau 5 giờ 30 phút (`DATAMATE_DEADLINE_S=19800`), để không
+  vượt giới hạn 6 giờ.
+
+### Chạy trên một GPU 8 GB (máy của đội, RTX 4060 Laptop)
+
+Máy chấm có 2× RTX 5090. Đội tự chạy vòng private trên một RTX 4060 8 GB. Image và model giữ nguyên, chỉ ghi đè
+bốn biến môi trường:
+
+| Biến | Giá trị | Lý do |
+|---|---|---|
+| `DATAMATE_LLM_TP` | `1` | Chỉ có một card |
+| `DATAMATE_LLM_CPU_OFFLOAD_GB` | `8` | Để khoảng 8 GB trọng số trong RAM, VRAM còn chỗ cho KV cache |
+| `DATAMATE_LLM_GPU_UTIL` | `0.85` | Màn hình laptop chiếm một phần VRAM |
+| `DATAMATE_DEADLINE_S` | để trống | Lượt của đội không bị giới hạn 6 giờ |
+
+```bash
+docker run --rm --gpus all --network none --shm-size=16g --entrypoint bash \
+  -e DATAMATE_LLM_TP=1 -e DATAMATE_LLM_CPU_OFFLOAD_GB=8 -e DATAMATE_LLM_GPU_UTIL=0.85 -e DATAMATE_DEADLINE_S= \
+  -v /path/to/split:/data:ro -v /path/to/output:/result \
+  <image>:final /code/predict.sh
+```
+
+Model, prompt, seed và số mẫu giống hệt lượt của BTC; chỉ cách đặt trọng số trên phần cứng là khác. Nếu vLLM báo
+thiếu bộ nhớ cho KV cache, tăng `DATAMATE_LLM_CPU_OFFLOAD_GB` (ví dụ `9`) trước khi đổi gì khác.
 
 ## Bố cục
 
