@@ -526,7 +526,8 @@ def verify_cmd(args):
     """Check the variants on disk against the sealed content hashes. Lists file names of a differing variant (names
     only, never content: side B stays totals-only). --fix-names first repairs mangled file names (_repair_name)."""
     meta, _ = load_cells()
-    keys = sorted(k for k in meta.get("content_fp", {}) if not args.side or k.startswith(f"{args.side}|"))
+    keys = sorted(k for k in meta.get("content_fp", {}) if (not args.side or k.startswith(f"{args.side}|"))
+                  and (not getattr(args, "families", None) or k.split("|")[1] in args.families))
     renamed = 0
     if args.fix_names:
         for k in keys:
@@ -1026,6 +1027,7 @@ def main():
     r.add_argument("--agent", choices=["off", "codegen", "sql"])
     v = sub.add_parser("verify")
     v.add_argument("--side", choices=F.SIDES)
+    v.add_argument("--families", nargs="*", help="only these families (a partial upload, e.g. Kaggle side A subset)")
     v.add_argument("--fix-names", action="store_true", help="repair mangled file names (unzip codepage, NFD) first")
     v.add_argument("--files", action="store_true", help="list file name/size/hash of every variant, not only bad ones")
     rg = sub.add_parser("regold")
