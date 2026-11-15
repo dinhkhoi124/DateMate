@@ -66,7 +66,36 @@ def _kill_group(proc: subprocess.Popen) -> None:
         proc.wait(timeout=30)
     except subprocess.TimeoutExpired:
         pass
-    time.sleep(5)   # let the driver release the killed processes' GPU memory
+    wait_gpu_free()
+
+
+def gpu_used_mib() -> list[int] | None:
+    """Memory used per visible GPU (nvidia-smi, no CUDA init in this process); None when it cannot be read."""
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                           capture_output=True, text=True, timeout=20)
+        vals = [int(x) for x in r.stdout.split()]
+        return vals if r.returncode == 0 and vals else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def wait_gpu_free(limit_mib: int = 2048, timeout_s: float = 90.0, read=gpu_used_mib, sleep=time.sleep) -> bool:
+    """Wait until the killed engine's GPU memory is back (V1 refuses to start when free memory < its utilisation
+    target). True = every GPU under `limit_mib`; unreadable -> a fixed 5 s pause, as before."""
+    sleep(2)
+    t0 = time.monotonic()
+    while True:
+        used = read()
+        if used is None:
+            sleep(5)
+            return False
+        if max(used) < limit_mib:
+            return True
+        if time.monotonic() - t0 > timeout_s:
+            print(f"[llm] GPU memory still in use after {timeout_s:.0f}s: {used} MiB", file=sys.stderr)
+            return False
+        sleep(2)
 
 
 def choose_profile(cfg: LLMConfig, probe: Callable[[str, float], tuple[bool, str]] = run_probe) -> str | None:

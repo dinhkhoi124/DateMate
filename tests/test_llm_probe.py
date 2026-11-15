@@ -96,3 +96,35 @@ def test_run_probe_reports_a_failing_child(monkeypatch):
 def test_probe_prompt_is_long_enough_to_exercise_prefill():
     long, short = llm_probe.probe_prompts()
     assert len(long) > 8000 and len(short) < 100
+
+
+def test_wait_gpu_free_polls_until_memory_is_back():
+    reads = iter([[29000, 3], [12000, 3], [400, 3]])
+    slept = []
+    assert llm_probe.wait_gpu_free(read=lambda: next(reads), sleep=slept.append) is True
+    assert len(slept) == 3   # initial pause + two polls
+
+
+def test_wait_gpu_free_without_nvidia_smi_pauses_and_returns():
+    slept = []
+    assert llm_probe.wait_gpu_free(read=lambda: None, sleep=slept.append) is False
+    assert sum(slept) >= 5
+
+
+def test_make_backend_retries_once_when_the_load_after_a_passed_probe_fails(monkeypatch):
+    calls = []
+
+    class Flaky(_FakeVLLM):
+        def __init__(self, cfg):
+            calls.append(cfg)
+            if len(calls) == 1:
+                raise ValueError("Free memory on device (3.1/31.4 GiB) on startup is less than desired")
+            super().__init__(cfg)
+
+    monkeypatch.setattr(llm_mod, "VLLMBackend", Flaky)
+    monkeypatch.setattr(llm_probe, "choose_profile", lambda cfg: "v1-eager-tp1")
+    monkeypatch.setattr(llm_probe, "apply_profile",
+                        lambda cfg, name: llm_probe.dataclasses.replace(cfg, **ENGINE_PROFILES[name]["cfg"]))
+    monkeypatch.setattr(llm_probe, "wait_gpu_free", lambda: True)
+    be = llm_mod.make_backend(LLMConfig(backend="vllm", model_path="/m/x", profiles="v1-eager-tp1"))
+    assert len(calls) == 2 and be.cfg.enforce_eager

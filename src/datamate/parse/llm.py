@@ -150,7 +150,17 @@ def make_backend(cfg: LLMConfig) -> Backend | None:
                 raise RuntimeError(f"no vLLM engine profile passed the probe ({cfg.profiles})")
             cfg = apply_profile(cfg, name)
             print(f"[llm] using engine profile {name}", file=sys.stderr)
-        inner = VLLMBackend(cfg)
+            try:
+                inner = VLLMBackend(cfg)
+            except Exception:  # noqa: BLE001  (the probe passed: retry once after the GPU is free again)
+                import traceback  # noqa: PLC0415
+                from datamate.parse.llm_probe import wait_gpu_free  # noqa: PLC0415
+                print(f"[llm] load after a passed probe failed, retrying once:\n{traceback.format_exc(limit=2)}",
+                      file=sys.stderr)
+                wait_gpu_free()
+                inner = VLLMBackend(cfg)
+        else:
+            inner = VLLMBackend(cfg)
         return ReplayBackend(cfg.replay_path, cfg, inner) if cfg.replay_path else inner
     if cfg.backend == "replay":
         return ReplayBackend(cfg.replay_path, cfg)
