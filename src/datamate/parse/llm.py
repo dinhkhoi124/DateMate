@@ -72,6 +72,26 @@ class ReplayBackend:
         return [self.cache.get(k, []) for k in keys]
 
 
+def visible_tp(tp: int) -> int:
+    """Tensor-parallel size the visible GPUs can serve. With fewer GPUs than requested, vLLM 0.10 falls back to Ray and
+    waits for the missing GPU forever (RTX 4060 15/11: image with TP=2 hung >10 min on one GPU instead of falling
+    back to rule-only). Same TP whenever enough GPUs are visible (the organisers' 2x 5090); unknown count -> as asked."""
+    n = 0
+    try:
+        from vllm.utils import cuda_device_count_stateless  # noqa: PLC0415  (NVML count, no CUDA init here)
+        n = cuda_device_count_stateless()
+    except Exception:  # noqa: BLE001
+        try:
+            import torch  # noqa: PLC0415
+            n = torch.cuda.device_count()
+        except Exception:  # noqa: BLE001
+            n = 0
+    if 0 < n < tp:
+        print(f"[llm] tensor_parallel_size {tp} > {n} visible GPU(s): using {n}", file=sys.stderr)
+        return n
+    return tp
+
+
 class VLLMBackend:
     """Offline vLLM engine with JSON-schema guided decoding. Imported lazily: the CPU dev env has no vllm."""
 
@@ -85,7 +105,7 @@ class VLLMBackend:
                        # no prefix cache -> also no chunked prefill: both go through the Triton prefix-prefill kernel
                        **({} if cfg.prefix_caching else {"enable_chunked_prefill": False}),
                        **({"cpu_offload_gb": cfg.cpu_offload_gb} if cfg.cpu_offload_gb > 0 else {}),
-                       tensor_parallel_size=cfg.tensor_parallel_size)
+                       tensor_parallel_size=visible_tp(cfg.tensor_parallel_size))
         self.tok = self.llm.get_tokenizer()
 
     def _sampling(self, n: int, schema: dict | None = None, free: bool = False, max_tokens: int | None = None):

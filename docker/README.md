@@ -52,7 +52,8 @@ docker run --rm --gpus '"device=0,1"' --network none --shm-size=16g --entrypoint
 
 ### Chạy trên phần cứng khác
 
-Máy chấm có 2× RTX 5090. Trên **một** GPU ≥ 24 GB, image và model giữ nguyên, chỉ ghi đè số GPU:
+Máy chấm có 2× RTX 5090. Image không bao giờ xin nhiều GPU hơn số GPU thấy được (`parse/llm.visible_tp`): với ít
+GPU hơn, vLLM sẽ chờ mãi GPU còn thiếu. Trên **một** GPU ≥ 24 GB, image và model giữ nguyên, có thể ghi rõ số GPU:
 
 ```bash
 docker run --rm --gpus all --network none --shm-size=16g --entrypoint bash \
