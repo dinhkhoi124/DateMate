@@ -31,7 +31,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONHASHSE
     DATAMATE_LLM=vllm DATAMATE_LLM_MODEL=/code/models/${MODEL} DATAMATE_LLM_TP=2 DATAMATE_LLM_DTYPE=float16 \
     DATAMATE_LLM_MAX_LEN=20480 DATAMATE_LLM_GPU_UTIL=0.90 DATAMATE_LLM_THINKING=0 DATAMATE_LLM_RULE_JUDGE=0 \
     DATAMATE_AGENT=${AGENT} \
-    DATAMATE_DEADLINE_S=19800
+    DATAMATE_DEADLINE_S=19800 \
+    DATAMATE_LLM_PROFILES=v1-eager-tp1,v1-eager-tp1-awq-flashinfer,v0-xformers-tp1
+# DATAMATE_LLM_PROFILES (D29): the organisers' 2x 5090 crashed the default engine (TP=2 + torch.compile, Test Solution
+# 15/11); each variant (config.ENGINE_PROFILES) is probed in a subprocess, the first that runs is used, none -> rule-only
 # DATAMATE_DEADLINE_S: after 5 h 30 min the remaining shops get rule answers only, so the organisers' 6 h limit
 # (Rule 7) never cuts the run. The team's own private run on the 8 GB RTX 4060 (README "Chạy trên một GPU 8 GB")
 # overrides it with -e DATAMATE_DEADLINE_S= together with TP=1 and CPU offload.

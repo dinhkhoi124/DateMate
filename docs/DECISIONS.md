@@ -4,6 +4,31 @@ Mỗi quyết định ghi: **bối cảnh → lựa chọn → lý do → hệ q
 
 ---
 
+### D29 — Nạp vLLM qua chuỗi cấu hình dự phòng, thử từng cấu hình trong tiến trình riêng (2026-11-15)
+- **Bối cảnh:** Test Solution 15/11 của image SQL (`3bf0188`, MD5 `582a7cfe…`) trên 2× RTX 5090 của BTC: engine V1
+  mặc định (TP=2, torch.compile + CUDA graph, AWQ Marlin, Flash Attention) chết với `CUDA error: an illegal memory
+  access` ngay lượt forward đo bộ nhớ đầu tiên, trong một kernel Inductor/Triton (`triton_heuristics.bench`). Custom
+  all-reduce đã tự tắt (không có P2P), nên lỗi không nằm ở giao tiếp giữa 2 GPU. Run lùi về rule-only, cổng vẫn báo
+  "passed". Đội không có 5090 để tái hiện, và Test Solution đã hết lượt.
+- **Lựa chọn:** `LLMConfig.profiles` (Dockerfile.llm đặt `DATAMATE_LLM_PROFILES`) liệt kê các biến thể trong
+  `config.ENGINE_PROFILES`, theo thứ tự:
+  1. `v1-eager-tp1`: V1, `enforce_eager` (không compile, không CUDA graph), 1 GPU, sampler PyTorch thay FlashInfer;
+  2. `v1-eager-tp1-awq-flashinfer`: như trên, kernel AWQ thường và attention FlashInfer;
+  3. `v0-xformers-tp1`: V0, xformers, AWQ thường, không prefix cache (cấu hình đã chạy 1000 câu public trên Kaggle).
+
+  `parse/llm_probe.py` thử từng biến thể trong một subprocess riêng (nạp model, sinh 4 mẫu từ prompt khoảng 3k token
+  hai lần, rồi một prompt ngắn), giết cả process group sau đó. Biến thể đầu tiên qua được thì tiến trình chính nạp
+  nó. Không biến thể nào qua thì rule-only như trước.
+- **Lý do:**
+  - Lỗi CUDA trong subprocess không làm hỏng tiến trình chính, nên thử tiếp được.
+  - Cả ba biến thể đều bỏ torch.compile và TP=2, là hai thứ có mặt trong lỗi. 14B AWQ khoảng 9.4 GB vừa một card 32 GB.
+  - Mỗi bước đổi thêm kernel nghi vấn (Marlin, Flash Attention), và bước cuối là cấu hình đã kiểm chứng.
+- **Hệ quả:**
+  - Thêm thời gian nạp: mỗi probe khoảng 1–3 phút, tối đa 600 giây.
+  - Eager chậm hơn ở bước decode. Ước lượng trên 5090 vẫn dưới mức hạn 5 giờ 30 nhờ prefix cache (V1), nhưng chưa đo.
+  - Khoá replay không đổi. Mẫu sinh trên 5090 khác Kaggle (V0/T4), nên điểm có thể lệch so với 0.419 public.
+  - Lượt private tự chạy phải dùng cùng loại máy với BTC (2× 5090) để chọn cùng biến thể (Rule 8).
+
 ### D28 — Agent SQL lấy k=4 mẫu, tau 0.5 (m=2) (2026-11-14, PM duyệt)
 - **Bối cảnh:** k=8 trên T4 mất khoảng 146 giây/câu. Ở tốc độ đó, 1000 câu public không vừa 3 shard × 12 giờ của
   Kaggle, và đội không đo trước được máy 2× 5090 của BTC (giới hạn 6 giờ), cũng như laptop RTX 4060 dùng cho

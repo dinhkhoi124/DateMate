@@ -26,7 +26,16 @@ Có hai image dùng chung bố cục `/code` và `predict.sh`:
    macro tính theo luật cũ thì không được bỏ phiếu.
 5. **Kết hợp với parser luật.** Khi parser luật cũng trả lời mà khác đáp án SQL thì abstain. `unanswerable` chỉ trả
    khi kỳ hỏi nằm ngoài khoảng dữ liệu (kiểm tra tất định).
-6. **Lùi về rule-only.** Không nạp được model thì cả lượt chạy rule-only, có ghi lý do ra stderr. Sau 5 giờ 30 phút
+6. **Nạp model qua chuỗi cấu hình dự phòng (D29).** Engine mặc định (2 GPU, torch.compile) gặp lỗi CUDA trên 5090
+   ở Test Solution 15/11. Image thử lần lượt các biến thể trong `DATAMATE_LLM_PROFILES`, mỗi biến thể trong một tiến
+   trình riêng:
+   - `v1-eager-tp1`: 1 GPU, không compile, không CUDA graph;
+   - `v1-eager-tp1-awq-flashinfer`: thêm kernel AWQ thường và attention FlashInfer;
+   - `v0-xformers-tp1`: engine V0, xformers.
+
+   Biến thể đầu tiên nạp được và sinh được thì dùng cho cả lượt. stderr ghi `[llm] engine profile <tên>: ok/FAILED`
+   và đuôi log của biến thể hỏng.
+7. **Lùi về rule-only.** Không biến thể nào chạy được thì cả lượt chạy rule-only, có ghi lý do ra stderr. Sau 5 giờ 30 phút
    (`DATAMATE_DEADLINE_S=19800`), các shop còn lại chỉ dùng đáp án luật, để không vượt giới hạn 6 giờ.
 
 ## Chạy
@@ -52,17 +61,9 @@ docker run --rm --gpus '"device=0,1"' --network none --shm-size=16g --entrypoint
 
 ### Chạy trên phần cứng khác
 
-Máy chấm có 2× RTX 5090. Image không bao giờ xin nhiều GPU hơn số GPU thấy được (`parse/llm.visible_tp`): với ít
-GPU hơn, vLLM sẽ chờ mãi GPU còn thiếu. Trên **một** GPU ≥ 24 GB, image và model giữ nguyên, có thể ghi rõ số GPU:
-
-```bash
-docker run --rm --gpus all --network none --shm-size=16g --entrypoint bash \
-  -e DATAMATE_LLM_TP=1 \
-  -v /path/to/split:/data:ro -v /path/to/output:/result \
-  <image>:final /code/predict.sh
-```
-
-Model, prompt, seed và số mẫu không đổi. GPU 8 GB không đủ cho model này. Image có biến
+Máy chấm có 2× RTX 5090. Mọi biến thể trong chuỗi dự phòng chỉ dùng **một** GPU, nên image chạy được nguyên trạng
+trên một GPU ≥ 24 GB. Model, prompt, seed và số mẫu không đổi. Muốn thử một biến thể cụ thể thì đặt
+`-e DATAMATE_LLM_PROFILES=<tên>`. GPU 8 GB không đủ cho model này. Image có biến
 `DATAMATE_LLM_CPU_OFFLOAD_GB`, nhưng đã thử trên RTX 4060 8 GB qua Docker Desktop/WSL thì không chạy được:
 - engine V1 cần pin memory, mà WSL không có;
 - engine V0 không còn đủ VRAM cho KV cache.

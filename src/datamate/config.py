@@ -95,6 +95,13 @@ class LLMConfig:
     # DATAMATE_LLM_RULE_JUDGE=1 turns it on (scripts/gpu/run_all.sh records with it on)
     rule_judge: bool = False
     judge_min_votes: int = 1
+    # D29: vLLM engine variants (ENGINE_PROFILES), tried in order, each in a probe subprocess; the first that loads and
+    # generates is used for the run. "" = load once with the settings above (Kaggle, CPU tests). Env
+    # DATAMATE_LLM_PROFILES (comma list), DATAMATE_LLM_PROBE_TIMEOUT_S
+    profiles: str = ""
+    probe_timeout_s: float = 600.0
+    enforce_eager: bool = False             # no torch.compile, no CUDA graphs
+    quantization: str = ""                  # "" = vLLM's choice (awq_marlin on sm80+); "awq" = plain AWQ kernels
 
     def __post_init__(self):
         if self.chat_template_kwargs is None:
@@ -125,7 +132,28 @@ class LLMConfig:
             env["call_all"] = True
         if os.environ.get("DATAMATE_LLM_RULE_JUDGE", "") not in ("", "0"):
             env["rule_judge"] = True
+        if os.environ.get("DATAMATE_LLM_PROFILES"):
+            env["profiles"] = os.environ["DATAMATE_LLM_PROFILES"]
+        if os.environ.get("DATAMATE_LLM_PROBE_TIMEOUT_S"):
+            env["probe_timeout_s"] = float(os.environ["DATAMATE_LLM_PROBE_TIMEOUT_S"])
         return cls(**{**env, **kw})
+
+
+# D29: organisers' Test Solution 15/11 on 2x RTX 5090: the default V1 engine (TP=2, torch.compile + CUDA graphs) died
+# with "CUDA error: an illegal memory access" in the first profiling forward, inside an Inductor/Triton kernel, so the
+# run fell back to rule-only. Variants from the least to the most different from that engine; every one avoids
+# torch.compile and CUDA graphs and uses one GPU (no NCCL). The last one is the Kaggle-proven setup (V0, xformers,
+# plain AWQ, no prefix cache). "env" is set before vLLM builds the engine; "cfg" replaces LLMConfig fields.
+ENGINE_PROFILES: dict[str, dict] = {
+    "v1-eager-tp1": {"env": {"VLLM_USE_V1": "1", "VLLM_USE_FLASHINFER_SAMPLER": "0"},
+                     "cfg": {"enforce_eager": True, "tensor_parallel_size": 1}},
+    "v1-eager-tp1-awq-flashinfer": {"env": {"VLLM_USE_V1": "1", "VLLM_USE_FLASHINFER_SAMPLER": "0",
+                                            "VLLM_ATTENTION_BACKEND": "FLASHINFER"},
+                                    "cfg": {"enforce_eager": True, "tensor_parallel_size": 1, "quantization": "awq"}},
+    "v0-xformers-tp1": {"env": {"VLLM_USE_V1": "0", "VLLM_ATTENTION_BACKEND": "XFORMERS"},
+                        "cfg": {"enforce_eager": True, "tensor_parallel_size": 1, "quantization": "awq",
+                                "prefix_caching": False}},
+}
 
 
 @dataclass(frozen=True)

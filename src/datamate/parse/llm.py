@@ -105,6 +105,8 @@ class VLLMBackend:
                        # no prefix cache -> also no chunked prefill: both go through the Triton prefix-prefill kernel
                        **({} if cfg.prefix_caching else {"enable_chunked_prefill": False}),
                        **({"cpu_offload_gb": cfg.cpu_offload_gb} if cfg.cpu_offload_gb > 0 else {}),
+                       **({"enforce_eager": True} if cfg.enforce_eager else {}),
+                       **({"quantization": cfg.quantization} if cfg.quantization else {}),
                        tensor_parallel_size=visible_tp(cfg.tensor_parallel_size))
         self.tok = self.llm.get_tokenizer()
 
@@ -141,6 +143,13 @@ def make_backend(cfg: LLMConfig) -> Backend | None:
     if cfg.backend == "off":
         return None
     if cfg.backend == "vllm":
+        if cfg.profiles:   # D29: probe engine variants in subprocesses, load the first one that runs
+            from datamate.parse.llm_probe import apply_profile, choose_profile  # noqa: PLC0415
+            name = choose_profile(cfg)
+            if name is None:
+                raise RuntimeError(f"no vLLM engine profile passed the probe ({cfg.profiles})")
+            cfg = apply_profile(cfg, name)
+            print(f"[llm] using engine profile {name}", file=sys.stderr)
         inner = VLLMBackend(cfg)
         return ReplayBackend(cfg.replay_path, cfg, inner) if cfg.replay_path else inner
     if cfg.backend == "replay":
