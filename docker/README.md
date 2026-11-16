@@ -8,7 +8,8 @@ Có hai image dùng chung bố cục `/code` và `predict.sh`:
 - **rule-only** (`docker/Dockerfile`): không dùng model. Parser luật cộng executor tất định.
 - **LLM** (`docker/Dockerfile.llm`, image này), base `vllm/vllm-openai:v0.10.1.1`.
   - Model: **Qwen/Qwen3-14B-AWQ** (14.8B tham số, Apache-2.0, công bố năm 2025, lượng tử 4-bit AWQ).
-  - Trọng số trong `/code/models/Qwen3-14B-AWQ`, chạy offline, tensor parallel trên 2 GPU, không thinking.
+  - Trọng số trong `/code/models/Qwen3-14B-AWQ`, chạy offline trên **một** GPU (engine chọn qua chuỗi dự phòng,
+    mục 6), không thinking.
 
 ## Cách hoạt động (agent text-to-SQL, `DATAMATE_AGENT=sql`)
 

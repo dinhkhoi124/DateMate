@@ -13,12 +13,14 @@ FROM vllm/vllm-openai:v0.10.1.1
 
 # D22: the model every agent number was measured with (Kaggle v3, AWQ 4-bit, fp16 activations)
 ARG MODEL=Qwen3-14B-AWQ
-# D26: agent kind. codegen (D20, default) | sql (text-to-SQL on DuckDB views). PM picks; sql needs the few-shot bank
-# src/datamate/agent/fewshot_sql.jsonl built beforehand (eval/build_fewshot_sql.py, train dev only, gitignored)
-ARG AGENT=codegen
+# D26/D28: agent kind. sql (text-to-SQL on DuckDB views, the submitted agent, default) | codegen (D20). sql needs the
+# few-shot bank src/datamate/agent/fewshot_sql.jsonl built beforehand (eval/build_fewshot_sql.py, train dev only,
+# gitignored); the build fails without it
+ARG AGENT=sql
 
 # - temp files only under /tmp (SPEC §7 câu 2): vLLM / torch.compile / triton caches
-# - 2x RTX 5090 (SPEC): tensor parallel over both cards; consumer cards may lack P2P (Docker Guide)
+# - 2x RTX 5090 (SPEC): DATAMATE_LLM_TP=2 is the base setting, but every D29 engine profile below overrides it to one
+#   GPU (TP=2 + torch.compile crashed on the organisers' 5090); consumer cards may lack P2P (Docker Guide)
 # - agent config fixed in the image (organisers change nothing): code-gen agent on (D20); k/m/policy are the committed
 #   AgentConfig defaults (D21), not set here. With the agent on, the rule side is pure rule (no D14 parser/judge)
 # - prompt ~10-12k tokens -> max_model_len 20480; prefix caching on (rulebook+README+schema shared per shop)
@@ -36,8 +38,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONHASHSE
 # DATAMATE_LLM_PROFILES (D29): the organisers' 2x 5090 crashed the default engine (TP=2 + torch.compile, Test Solution
 # 15/11); each variant (config.ENGINE_PROFILES) is probed in a subprocess, the first that runs is used, none -> rule-only
 # DATAMATE_DEADLINE_S: after 5 h 30 min the remaining shops get rule answers only, so the organisers' 6 h limit
-# (Rule 7) never cuts the run. The team's own private run on the 8 GB RTX 4060 (README "Chạy trên một GPU 8 GB")
-# overrides it with -e DATAMATE_DEADLINE_S= together with TP=1 and CPU offload.
+# (Rule 7) never cuts the run. The private run must use the same hardware as the organisers (2x 5090, D29): on a GPU
+# without room for the 14B model every profile fails and the run is rule-only (README "Chạy trên phần cứng khác").
 
 WORKDIR /code
 
@@ -75,7 +77,7 @@ COPY data/train/train /code/training_code/data/train/train
 RUN sed -i 's/\r$//' /code/predict.sh && chmod +x /code/predict.sh \
  && test -f /code/src/datamate/rulebook_index.json \
  && python3 -c "from datamate.config import AgentConfig, LLMConfig; import datamate.agent.agent, datamate.agent.sandbox; \
-a, l = AgentConfig.from_env(), LLMConfig.from_env(); assert a.enabled and l.backend == 'vllm' and l.max_model_len >= 16384; \
+a, l = AgentConfig.from_env(), LLMConfig.from_env(); assert a.enabled and a.kind == '${AGENT}' and l.backend == 'vllm' and l.max_model_len >= 16384 and l.profiles; \
 print('agent', a); print('llm', l.model_path, l.dtype, 'tp', l.tensor_parallel_size, 'len', l.max_model_len)" \
  && { [ "${MODEL}" = "none" ] || test -f "/code/models/${MODEL}/config.json"; } \
  && { [ "${AGENT}" != "sql" ] || { test -s /code/src/datamate/agent/fewshot_sql.jsonl \
