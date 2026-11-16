@@ -1,5 +1,10 @@
 # HANDOVER — Bàn giao DataMate cho nhóm (11/11/2026)
 
+> **16/11: image final là image LLM agent SQL**, tag git `vfinal` (`a3f0c4f`), tag Docker
+> `zaic2026_datamate_aio_zalo:final`, Image ID `c53346b0…`, tar MD5 `ddd0ab3984d0d75a8a3f803eb44e3efb`. Mục "Mặc
+> định khi PM vắng" (final = rule-only) không còn áp dụng. Private 20–23/11 **phải chạy tar này trên 2× RTX 5090**
+> (D29): trên GPU không đủ chỗ cho model 14B, image tự lùi về rule-only và điểm sẽ lệch > 0.03 so với lượt BTC chạy lại.
+
 Từ 12/11 Khôi chuyển sang vai trò **PM**: không trực tiếp làm kỹ thuật hằng ngày, nhưng **giữ quyền quyết định** cấu
 hình cuối, build image, Test Solution và nộp public. Hai thành viên nhận phần thực thi: cải tiến, chạy eval/Kaggle,
 build và kiểm image, chạy private (20–23/11). File này là điểm bắt đầu. Đọc hết **một lần** trước khi làm gì khác.

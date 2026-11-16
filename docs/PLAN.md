@@ -78,6 +78,11 @@ GPU: dùng nguồn sẵn có (CPU, Kaggle/Colab, Test Solution). **[5090]** = b�
 - [ ] Upload image final lên Drive (30–40 GB) trước 15/11 tối, thử tải về + MD5
 
 **16/11** — Nộp final (≤ 2 lần) trước 23:59. **20–23/11** — **[5090]** chạy private
+- [x] Image final LLM agent SQL từ tag `vfinal` (`a3f0c4f`): build, kiểm trên 4060 bằng lệnh BTC (EXPERIMENTS 16/11).
+      Tar `E:/zaic_submit/llm/zaic2026_datamate_aio_zalo_final.tar`, 19.4 GB, MD5 `ddd0ab3984d0d75a8a3f803eb44e3efb`
+- [ ] Upload Drive (link công khai), tải thử, so MD5
+- [ ] Nộp form "Solution Submission" (link + MD5, loại model "<=15B")
+- [ ] **Đặt thuê 2× 5090 cho 20–23/11**: image LLM trên GPU nhỏ tự lùi về rule-only, điểm sẽ lệch > 0.03 so với BTC (D29)
 
 ## Checklist theo ngày (trước D20)
 
